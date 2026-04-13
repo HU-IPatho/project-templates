@@ -1,0 +1,38 @@
+# {{PROJECT_NAME}}
+
+scRNA-seq 解析プロジェクト
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## ディレクトリ構造
+
+```
+.
+├── data/
+│   ├── raw/           生データ（Cell Ranger 出力等）※ .gitignore 対象
+│   ├── reference/     リファレンスデータ ※ .gitignore 対象
+│   └── processed/     前処理済みデータ ※ .gitignore 対象
+├── src/               解析スクリプト（番号付き）
+├── results/           解析結果
+├── reports/           レポート・図表
+├── CLAUDE.md          Claude Code 用コンテキスト
+└── README.md          このファイル
+```
+
+## データ取得
+
+```bash
+work-fetch /data/shared/datasets/your-data/
+work-save results/
+work-share results/seurat_obj.rds --message "Seurat オブジェクト"
+```
+
+## 解析フロー
+
+1. `src/01_cellranger.sh` — Cell Ranger count
+2. `src/02_qc_filter.R` — QC・フィルタリング
+3. `src/03_normalization.R` — 正規化・次元削減
+4. `src/04_clustering.R` — クラスタリング・マーカー遺伝子
+5. `src/05_annotation.R` — 細胞型アノテーション
+6. `src/06_visualization.R` — 可視化・レポート生成

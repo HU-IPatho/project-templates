@@ -1,0 +1,25 @@
+# 大容量データ（git 管理外）
+data/raw/
+data/reference/
+data/processed/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+renv/staging/
+renv/cellar/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

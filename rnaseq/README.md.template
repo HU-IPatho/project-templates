@@ -1,0 +1,42 @@
+# {{PROJECT_NAME}}
+
+RNA-seq 解析プロジェクト
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## ディレクトリ構造
+
+```
+.
+├── data/
+│   ├── raw/           生データ（FASTQ 等）※ .gitignore 対象
+│   ├── reference/     リファレンスデータ ※ .gitignore 対象
+│   └── processed/     前処理済みデータ ※ .gitignore 対象
+├── src/               解析スクリプト（番号付き）
+├── results/           解析結果
+├── reports/           レポート・図表
+├── CLAUDE.md          Claude Code 用コンテキスト
+└── README.md          このファイル
+```
+
+## データ取得
+
+```bash
+# HDD から SSD にデータをコピー
+work-fetch /data/shared/datasets/your-data/
+
+# 解析結果を HDD に保存
+work-save results/
+
+# 共有データとしてリクエスト
+work-share results/counts.rds --message "カウントデータ"
+```
+
+## 解析フロー
+
+1. `src/01_qc.R` — FastQC / MultiQC
+2. `src/02_alignment.sh` — STAR / HISAT2
+3. `src/03_quantification.R` — featureCounts / Salmon
+4. `src/04_deseq2.R` — DESeq2 差分発現解析
+5. `src/05_visualization.R` — 可視化・レポート生成

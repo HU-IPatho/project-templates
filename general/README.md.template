@@ -1,0 +1,35 @@
+# {{PROJECT_NAME}}
+
+データ解析プロジェクト
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## ディレクトリ構造
+
+```
+.
+├── data/
+│   ├── raw/           生データ ※ .gitignore 対象
+│   ├── reference/     リファレンスデータ ※ .gitignore 対象
+│   └── processed/     前処理済みデータ ※ .gitignore 対象
+├── src/               解析スクリプト（番号付き）
+├── results/           解析結果
+├── reports/           レポート・図表
+├── CLAUDE.md          Claude Code 用コンテキスト
+└── README.md          このファイル
+```
+
+## データ取得
+
+```bash
+work-fetch /data/shared/datasets/your-data/
+work-save results/
+work-share results/output.csv --message "解析結果"
+```
+
+## 解析フロー
+
+1. `src/01_preprocessing.R` — データ前処理
+2. `src/02_analysis.R` — メイン解析
+3. `src/03_visualization.R` — 可視化・レポート生成
