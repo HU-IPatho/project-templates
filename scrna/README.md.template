@@ -1,6 +1,6 @@
 # {{PROJECT_NAME}}
 
-scRNA-seq 解析プロジェクト（Seurat v5 + Harmony・再現性重視）
+scRNA-seq 解析プロジェクト（Seurat v5 + Harmony・再現性重視・① analysis-template-standard 準拠）
 
 - Author: {{AUTHOR}}
 - Created: {{DATE}}
@@ -8,41 +8,59 @@ scRNA-seq 解析プロジェクト（Seurat v5 + Harmony・再現性重視）
 ## クイックスタート
 
 ```bash
-Rscript install_deps.R          # 解析環境を復元（renv.lock で版固定）
-bash fetch_data.sh              # データを data/raw/ に置く（編集して使う）
-# 00_config.R を自分のデータに合わせて編集（loader / batch_key / QC / mito_pattern）
-Rscript 01_load_qc.R                                   # QC
-JID=$(job-run --label integrate -- Rscript 02_integrate.R)  # 統合(長時間→job-run)
+# 0) 初回セットアップ（対話）: config.yaml と AGENTS.md 固有節を /grill-me で埋める
+#    Claude Code なら /scaffold-config を実行（.claude/skills/scaffold-config/）
+
+Rscript install_deps.R                         # 解析環境を復元（renv.lock で版固定）
+python python/fetch_data.py GSE134520          # データを data/raw/ へ取得（GEO 例）
+# config.yaml を自分のデータに合わせて編集（loader / batch_key / QC / mito_pattern）
+
+Rscript analysis/01_load_qc.R                              # QC → data/interim/seurat_qc.rds
+JID=$(job-run --label integrate -- Rscript analysis/02_integrate.R)  # 統合(長時間→job-run)
 job-wait "$JID" --timeout 570
-Rscript 03_markers.R                                  # マーカー
-work-save results/ reports/     # HDD へ退避
+Rscript analysis/03_markers.R                             # マーカー → outputs/tables/
+quarto render reports/report.qmd                         # レポート（保存済み object を読むだけ）
+work-save data/processed outputs reports                 # HDD へ退避（AGENTS-base 参照）
 ```
 
-詳しい規約・ハマりどころ・長時間ジョブの回し方は **`AGENTS.md`** を参照（Claude/Codex はこれを自動で読む）。
+スクリプトは**プロジェクトルートから**実行する（パスは `here::here()` でルート相対解決）。
+規約・ハマりどころ・長時間ジョブの回し方は **`AGENTS.md`**（層 3 固有）と workspace 共通の
+**`AGENTS-base.md`**（層 1）を参照。
 
-## ディレクトリ構造
+## ディレクトリ構造（① 標準）
 
 ```
 .
-├── 00_config.R        ★編集するのはここ（データ形式・QC・統合パラメータ）
-├── R/load_data.R      データローダ（tenx / dense・ハマりどころ封入済み）
-├── 01_load_qc.R       読込 → merge → QC
-├── 02_integrate.R     正規化 → PCA → Harmony → クラスタ → UMAP（長時間）
-├── 03_markers.R       マーカー遺伝子同定
-├── install_deps.R     renv 環境構築（restore）
-├── fetch_data.sh      データ取得（編集して使う）
-├── renv.lock          依存パッケージの版固定（再現性の要）
-├── data/              生データ・中間物（.gitignore 対象）
-├── results/           マーカーテーブル等
-├── reports/           UMAP 等の図
-└── AGENTS.md          解析規約（要読）
+├── config.yaml          ★編集するのはここ（データ形式・QC・統合パラメータ＝層3の事実）
+├── analysis/            番号付き実行スクリプト（パイプライン本体・ルートから実行）
+│   ├── 00_config.R      config.yaml を読む薄いローダ
+│   ├── 01_load_qc.R     読込 → merge → QC        → data/interim/seurat_qc.rds
+│   ├── 02_integrate.R   正規化 → PCA → Harmony → クラスタ → UMAP（長時間）→ data/processed/
+│   └── 03_markers.R     マーカー遺伝子同定       → outputs/tables/
+├── R/                   R 関数（source される再利用ロジック）
+│   ├── load_data.R      データローダ（tenx / dense・ハマりどころ封入済み）
+│   └── helpers.R        出力ハーネス（save_fig / save_table / captions.tsv）
+├── python/fetch_data.py 取得・変換モジュール（GEO/URL → data/raw）
+├── data/                生データ・中間物（.gitignore 対象・git 非追跡）
+│   ├── raw/             不変の入力層
+│   ├── interim/         再生成可能な中間物
+│   └── processed/       正準 object（seurat_integrated.rds・共有昇格の単位）
+├── outputs/             成果物（git 追跡）
+│   ├── tables/          表（CSV）
+│   └── figures/         図（figNN・PNG+PDF）
+├── reports/report.qmd   Quarto レポート（保存済み object を読むだけ・git 追跡）
+├── install_deps.R       renv 環境構築（restore）
+├── renv.lock            R 依存の版固定（再現性の要）
+├── pyproject.toml       Python 依存の版固定（uv）
+└── AGENTS.md            解析規約（層3 固有・CLAUDE.md は symlink）
 ```
 
 ## 解析フロー
 
 1. `install_deps.R` — renv で Seurat v5 + Harmony 環境を復元
-2. `01_load_qc.R` — データ読込・QC フィルタ
-3. `02_integrate.R` — 正規化・次元削減・**Harmony 統合**・クラスタリング・UMAP
-4. `03_markers.R` — クラスタマーカー同定・アノテーション目安
+2. `analysis/01_load_qc.R` — データ読込・QC フィルタ（→ `data/interim`）
+3. `analysis/02_integrate.R` — 正規化・次元削減・**Harmony 統合**・クラスタリング・UMAP（→ `data/processed`）
+4. `analysis/03_markers.R` — クラスタマーカー同定・アノテーション目安（→ `outputs/tables`）
+5. `reports/report.qmd` — Quarto レポート（保存済み object と outputs を読むだけ・再計算しない）
 
 参照実装（フル worked example）: `HU-IPatho/gse134520-scrna-dogfood`
