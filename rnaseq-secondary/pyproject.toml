@@ -1,0 +1,15 @@
+# Python 版ピン（版ピン 3 系統の 2 系統目）。
+# 本テンプレの Python は取得・変換の最小レイヤ（python/fetch_counts.py）のみ。
+# 依存を宣言し、`uv lock && uv sync` で uv.lock を生成・固定する（uv.lock を git 追跡）。
+[project]
+name = "rnaseq-secondary"
+version = "0.1.0"
+description = "bulk RNA-seq 2 次解析（SE→DEG）テンプレの Python 取得変換レイヤ"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+]
+
+[tool.uv]
+# uv でロック/同期する:  uv lock && uv sync
+package = false

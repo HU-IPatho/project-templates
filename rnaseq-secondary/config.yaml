@@ -1,0 +1,58 @@
+# ============================================================================
+# rnaseq-secondary 設定（事実層 = 層 3・config.yaml）
+# ----------------------------------------------------------------------------
+# ★ここが「このプロジェクト固有の事実」の単一の置き場★。着手時に scaffold skill が
+#   /grill-me で対話的に埋める（.claude/skills/scaffold-rnaseq-secondary/）。
+#   非自明な固有「規約（narrative）」は AGENTS.md「このプロジェクト固有」節へ（事実と分離）。
+# analysis/01-03 のスクリプトは本ファイルを読んで動く（スクリプト本体は編集しない）。
+# ============================================================================
+
+# --- 入力 ---------------------------------------------------------------------
+# gene×sample の raw counts 行列（TSV・1 列目=gene_id・ヘッダ=sample_id）。
+# fetch_data.sh / python/fetch_counts.py で data/ に用意し、ここにルート相対パスを書く。
+counts_file: data/interim/counts.tsv
+
+# 遺伝子シンボルの生物種（housekeeping リストの既定選択に使う）。human / mouse。
+organism: human
+
+# --- DEG エンジン選択 ---------------------------------------------------------
+# "edger"  : edgeR（DGEList）。★n=1（各群 1 サンプル）はこちら（HK 分散）★。
+# "deseq2" : DESeq2（DESeqDataSet・median-of-ratios）。複製ありの標準。
+# "both"   : 両方走らせ、有意遺伝子の一致度（Jaccard / logFC 相関 / 符号一致）も出力。
+method: edger
+
+fdr: 0.05                      # 有意判定の FDR 閾値（図の色分け・一致度に使用）
+
+# --- design / contrast（design.R が各エンジンの入力に変換）--------------------
+design:
+  group_col: group             # 主たる比較変数（samples の列名）
+  covariates: []               # モデル共変量（バッチ等）。下の既定例は単一バッチゆえ空。
+                               # 複数バッチがあるなら [batch] を指定（design.R がモデルに入れ補正）。
+  reference_level: NC          # group の基準レベル（対照）
+
+contrasts:                     # 名前: [numerator, denominator]（group のレベル名）
+  sh1_vs_NC: [sh1, NC]
+  sh2_vs_NC: [sh2, NC]
+
+# --- 前処理 -------------------------------------------------------------------
+prefilter:
+  min_count_sum: 10            # DESeq2 パスの軽い prefilter（edgeR は filterByExpr）
+
+# --- edgeR n=1 DEG（housekeeping 分散）---------------------------------------
+edger:
+  hk_gene_file: ""             # 空なら organism に応じ resources/housekeeping/ の同梱を使う
+                               # 例: 全 Eisenberg リストに差替 → resources/housekeeping/hk_human_full.txt
+  min_hk_genes: 10             # 発現行列に存在する HK がこれ未満なら BCV 固定へフォールバック
+  bcv_fallback: 0.4            # フォールバック BCV（human 0.4 / 細胞株 0.1 / technical 0.01）
+
+# --- 図 -----------------------------------------------------------------------
+heatmap:
+  n_top: 30                    # top-DEG heatmap に載せる遺伝子数（第 1 対比・padj 昇順）
+
+# --- サンプルシート（行=sample。counts のヘッダ sample_id と一致させる）--------
+# ↓ は n=1 shRNA ノックダウン例（NC/sh1/sh2 各 1・batch は同一 → 実質共変量なし）。
+#   複製がある場合は行を増やし group を割り当てる（そのとき method: deseq2 も選べる）。
+samples:
+  - {sample_id: NC,  group: NC,  batch: B1}
+  - {sample_id: sh1, group: sh1, batch: B1}
+  - {sample_id: sh2, group: sh2, batch: B1}
