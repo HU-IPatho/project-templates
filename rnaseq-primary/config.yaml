@@ -1,0 +1,54 @@
+# ============================================================================
+# rnaseq-primary 層 3 設定（事実データ）— ★編集するのは基本このファイルだけ★
+# analysis/01-04 のスクリプトはここを読んで動く。narrative な固有規約は AGENTS.md へ。
+# 着手時は /grill-me（.claude/skills/init-rnaseq-primary）が対話でここを埋める。
+# ============================================================================
+
+project:
+  name: rnaseq-primary          # プロジェクト名（README/レポートに使う）
+  organism: "Homo sapiens"      # "Homo sapiens" / "Mus musculus"
+  paired_end: true              # ペアエンドなら true、シングルエンドなら false
+
+# --- 参照（decoy-aware salmon index / GTF / tx2gene）------------------------
+# ★管理者が /work/shared に事前構築し、研究員は RO 参照する（テンプレは index を同梱しない）。
+# パスは自分のワークスペースの実体に合わせて config で指定する。
+reference:
+  salmon_index: /work/shared/refs/salmon/gencode.v46.sa_decoy   # selective-alignment 用 decoy-aware index
+  tx2gene:      /work/shared/refs/tx2gene/gencode.v46.tx2gene.tsv  # transcript_id -> gene_id 対応表
+  gtf:          /work/shared/refs/gtf/gencode.v46.annotation.gtf
+  # tximeta の来歴担保（linkedTxome）。index を生成した参照 FASTA/GTF と一致させる。
+  txome:
+    source:   GENCODE
+    organism: "Homo sapiens"
+    release:  "46"
+    genome:   GRCh38
+    fasta:    /work/shared/refs/fasta/gencode.v46.transcripts.fa
+    gtf:      /work/shared/refs/gtf/gencode.v46.annotation.gtf
+
+# --- 公開データ取得（任意）--------------------------------------------------
+# analysis/01_fetch.py が pysradb/ffq でここの accession を data/raw に取得する。
+# 既に data/raw に FASTQ がある場合は空でよい。
+fetch:
+  accessions: []                # 例: [SRR1234567, SRR1234568]
+
+# --- サンプル表 -------------------------------------------------------------
+# fastq は data/raw 配下。fq2 は paired_end=true のときのみ使う。
+samples:
+  - id:  sample1
+    fq1: data/raw/sample1_R1.fastq.gz
+    fq2: data/raw/sample1_R2.fastq.gz
+  - id:  sample2
+    fq1: data/raw/sample2_R1.fastq.gz
+    fq2: data/raw/sample2_R2.fastq.gz
+
+# --- fastp（アダプタトリム・品質フィルタ）-----------------------------------
+fastp:
+  threads: 4
+  extra_flags: ["--detect_adapter_for_pe"]
+
+# --- salmon quant（selective alignment + decoy-aware + GC/seq bias 補正）-----
+salmon:
+  libtype: A                    # A=自動判定（推奨）
+  threads: 8
+  # selective alignment の必須/推奨フラグ。--gcBias は契約上必須。
+  extra_flags: ["--gcBias", "--seqBias", "--validateMappings"]

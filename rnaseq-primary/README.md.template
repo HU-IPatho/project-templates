@@ -1,0 +1,54 @@
+# {{PROJECT_NAME}}
+
+bulk RNA-seq 1 次解析（Salmon selective alignment → tximeta → gene-level SummarizedExperiment・再現性重視）
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## クイックスタート（すべてプロジェクトルートから）
+
+```bash
+Rscript install_deps.R              # R+Bioconductor 環境を復元（renv.lock で版固定）
+uv sync                             # Python 取得系（pysradb/ffq）を uv.lock で固定
+# /init-rnaseq-primary で config.yaml と AGENTS.md 固有節を対話的に埋める（grill-me 駆動）
+python3 analysis/01_fetch.py        # 公開 FASTQ を data/raw へ（共有由来は work-fetch）
+bash analysis/02_qc_fastp.sh        # fastp トリム → FastQC
+bash analysis/03_salmon_quant.sh    # salmon 定量(長時間→内部で job-run) → MultiQC 集約
+Rscript analysis/04_tximeta_se.R    # tximeta → gene-level SE（data/processed/se.rds）
+quarto render reports/qc_report.qmd # QC レポート（保存済み object を読むだけ）
+work-save data/processed/ outputs/ reports/   # HDD へ退避
+```
+
+詳しい規約・参照の指定・長時間ジョブの回し方は **`AGENTS.md`** を参照（Claude/Codex はこれを自動で読む）。
+
+## ディレクトリ構造
+
+```
+.
+├── config.yaml         ★編集するのはここ（参照パス・サンプル・定量オプション）
+├── analysis/           番号付き実行スクリプト（パイプライン本体）
+│   ├── 01_fetch.py       公開 FASTQ 取得 → data/raw
+│   ├── 02_qc_fastp.sh    fastp トリム → FastQC
+│   ├── 03_salmon_quant.sh salmon 定量(decoy-aware・--gcBias・job-run) → MultiQC
+│   └── 04_tximeta_se.R   tximeta 来歴付 → gene-level SE
+├── R/                  R 関数（helpers.R=出力ハーネス / qc_se.R=QC）
+├── python/             取得・変換モジュール（config.py / fetch.py）
+├── data/               raw(不変) / interim(中間) / processed(正準 object)  ※git 非追跡
+├── outputs/            tables / figures(PNG+PDF) / captions.tsv          ※git 追跡
+├── reports/            Quarto レポート・MultiQC 集約 HTML                 ※git 追跡
+├── install_deps.R      renv 環境構築（restore）
+├── renv.lock           R+Bioconductor の版固定（Bioc 3.23 明示）
+├── pyproject.toml      Python 依存宣言（uv lock で uv.lock を生成）
+└── AGENTS.md           解析規約（要読・CLAUDE.md は symlink）
+```
+
+## 解析フロー
+
+1. `install_deps.R` / `uv sync` — R+Bioconductor（tximeta 系）と Python 取得系を版固定で復元
+2. `01_fetch.py` — 公開 FASTQ を `data/raw` に取得
+3. `02_qc_fastp.sh` — fastp トリム・FastQC
+4. `03_salmon_quant.sh` — **salmon selective alignment（decoy-aware・`--gcBias`）** 定量・MultiQC 集約
+5. `04_tximeta_se.R` — **tximeta 来歴付 → gene-level SE**（`data/processed/se.rds` = 下流 2 次解析の入力）
+6. `reports/qc_report.qmd` — QC（library size / mapping rate / PCA / MultiQC）レポート
+
+参照実装（同一標準の scRNA 版）: `scrna/`

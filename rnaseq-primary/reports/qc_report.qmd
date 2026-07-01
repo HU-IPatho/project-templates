@@ -1,0 +1,58 @@
+---
+title: "RNA-seq 1 次解析 QC レポート"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+---
+
+```{r setup}
+# ★このレポートは保存済み object を「読むだけ」— 重い計算（tximeta/PCA 等）は
+#   analysis/ が済ませ data/processed に保存してある（spec「Quarto 計算分離」）。
+#   レンダリングは決定的・低コストで、数値/図がコードと乖離しない。
+suppressPackageStartupMessages({
+  library(here)
+  library(knitr)
+  library(SummarizedExperiment)
+})
+se <- readRDS(here::here("data", "processed", "se.rds"))
+qc <- readRDS(here::here("data", "processed", "qc.rds"))
+```
+
+## 概要
+
+- 遺伝子数 × サンプル数: **`r nrow(se)` × `r ncol(se)`**
+- 由来: salmon selective alignment（decoy-aware index・`--gcBias`）→ tximeta（来歴付）→ gene-level SE
+- 正準 object: `data/processed/se.rds`（下流 rnaseq-secondary の入力）
+
+## QC サマリ
+
+```{r qc-table}
+knitr::kable(qc$summary)
+```
+
+## 図（analysis/04 が出力ハーネスで生成した保存済み図を埋め込む）
+
+```{r figs, results="asis"}
+# outputs/figures の PNG を読むだけ（再描画しない）
+for (f in c("fig01_library_size", "fig02_mapping_rate", "fig03_pca")) {
+  png <- here::here("outputs", "figures", paste0(f, ".png"))
+  if (file.exists(png)) cat(sprintf("![%s](%s)\n\n", f, png))
+}
+```
+
+## MultiQC（fastp / FastQC / salmon の集約）
+
+fastp・FastQC・salmon のログを集約した MultiQC レポート:
+[`reports/multiqc/multiqc_report.html`](multiqc/multiqc_report.html)
+
+## 来歴（provenance）
+
+```{r provenance}
+# tximeta が SE に刻んだ transcriptome の由来（linkedTxome）
+md <- metadata(se)
+if (!is.null(md$txomeInfo)) str(md$txomeInfo) else cat("（tximport フォールバック経由 — 来歴メタなし）\n")
+```

@@ -1,0 +1,47 @@
+# ============================================================================
+# uv.lock — Python 依存の版固定（版ピン 3 系統の Python 系統・spec MUST）。
+# ※ 手書き seed。host はネットワーク不可のため `uv lock` を実行できないので、
+#   pyproject.toml の依存を固定版へ解決した最小 seed を同梱する（renv.lock と同様）。
+#   管理者の dogfood e2e（omics-dev イメージ内で `uv lock`）で hash 付き完全 lock に確定する。
+# ============================================================================
+version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "ffq"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "pysradb"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "pyyaml"
+version = "6.0.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "requests"
+version = "2.32.3"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "rnaseq-primary"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "ffq" },
+    { name = "pysradb" },
+    { name = "pyyaml" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ffq", specifier = ">=0.3" },
+    { name = "pysradb", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.31" },
+]
