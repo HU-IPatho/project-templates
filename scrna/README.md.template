@@ -1,38 +1,48 @@
 # {{PROJECT_NAME}}
 
-scRNA-seq 解析プロジェクト
+scRNA-seq 解析プロジェクト（Seurat v5 + Harmony・再現性重視）
 
 - Author: {{AUTHOR}}
 - Created: {{DATE}}
+
+## クイックスタート
+
+```bash
+Rscript install_deps.R          # 解析環境を復元（renv.lock で版固定）
+bash fetch_data.sh              # データを data/raw/ に置く（編集して使う）
+# 00_config.R を自分のデータに合わせて編集（loader / batch_key / QC / mito_pattern）
+Rscript 01_load_qc.R                                   # QC
+JID=$(job-run --label integrate -- Rscript 02_integrate.R)  # 統合(長時間→job-run)
+job-wait "$JID" --timeout 570
+Rscript 03_markers.R                                  # マーカー
+work-save results/ reports/     # HDD へ退避
+```
+
+詳しい規約・ハマりどころ・長時間ジョブの回し方は **`AGENTS.md`** を参照（Claude/Codex はこれを自動で読む）。
 
 ## ディレクトリ構造
 
 ```
 .
-├── data/
-│   ├── raw/           生データ（Cell Ranger 出力等）※ .gitignore 対象
-│   ├── reference/     リファレンスデータ ※ .gitignore 対象
-│   └── processed/     前処理済みデータ ※ .gitignore 対象
-├── src/               解析スクリプト（番号付き）
-├── results/           解析結果
-├── reports/           レポート・図表
-├── CLAUDE.md          Claude Code 用コンテキスト
-└── README.md          このファイル
-```
-
-## データ取得
-
-```bash
-work-fetch /data/shared/datasets/your-data/
-work-save results/
-work-share results/seurat_obj.rds --message "Seurat オブジェクト"
+├── 00_config.R        ★編集するのはここ（データ形式・QC・統合パラメータ）
+├── R/load_data.R      データローダ（tenx / dense・ハマりどころ封入済み）
+├── 01_load_qc.R       読込 → merge → QC
+├── 02_integrate.R     正規化 → PCA → Harmony → クラスタ → UMAP（長時間）
+├── 03_markers.R       マーカー遺伝子同定
+├── install_deps.R     renv 環境構築（restore）
+├── fetch_data.sh      データ取得（編集して使う）
+├── renv.lock          依存パッケージの版固定（再現性の要）
+├── data/              生データ・中間物（.gitignore 対象）
+├── results/           マーカーテーブル等
+├── reports/           UMAP 等の図
+└── AGENTS.md          解析規約（要読）
 ```
 
 ## 解析フロー
 
-1. `src/01_cellranger.sh` — Cell Ranger count
-2. `src/02_qc_filter.R` — QC・フィルタリング
-3. `src/03_normalization.R` — 正規化・次元削減
-4. `src/04_clustering.R` — クラスタリング・マーカー遺伝子
-5. `src/05_annotation.R` — 細胞型アノテーション
-6. `src/06_visualization.R` — 可視化・レポート生成
+1. `install_deps.R` — renv で Seurat v5 + Harmony 環境を復元
+2. `01_load_qc.R` — データ読込・QC フィルタ
+3. `02_integrate.R` — 正規化・次元削減・**Harmony 統合**・クラスタリング・UMAP
+4. `03_markers.R` — クラスタマーカー同定・アノテーション目安
+
+参照実装（フル worked example）: `HU-IPatho/gse134520-scrna-dogfood`
