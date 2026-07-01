@@ -1,0 +1,63 @@
+---
+title: "scRNA-seq 解析レポート"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+# ★このレポートは保存済み object と outputs/ を「読むだけ」★
+# 重い計算（QC / 正規化 / PCA / Harmony 統合 / FindAllMarkers）は analysis/ が実行済みで、
+# その成果は data/processed の正準 object と outputs/ に保存されている。レポートは再計算しない
+# （① Quarto の計算分離＝レンダリングの決定性・低コスト化・図と数値の乖離防止）。
+suppressPackageStartupMessages({ library(here); library(Seurat); library(ggplot2); library(knitr) })
+source(here::here("analysis", "00_config.R"))
+
+obj_path <- here::here("data", "processed", "seurat_integrated.rds")
+have_obj <- file.exists(obj_path)
+if (have_obj) o <- readRDS(obj_path)
+```
+
+本レポートは `analysis/01→02→03` が生成した保存済み成果物を読み込んで提示する。
+数値・図はすべて `data/processed/seurat_integrated.rds` と `outputs/` に由来し、レンダリング時に
+再計算しない（literate だが計算は再実行しない）。
+
+```{r no-object, eval = !have_obj, results = "asis"}
+cat("> **未計算**: `data/processed/seurat_integrated.rds` が見つからない。",
+    "まず `analysis/01_load_qc.R → 02_integrate.R → 03_markers.R` を実行する。\n")
+```
+
+## クラスタリング（UMAP）
+
+```{r umap, eval = have_obj, fig.width = 7, fig.height = 6}
+# 保存済みの UMAP 埋め込みを描画するのみ（RunUMAP は再実行しない）。
+DimPlot(o, group.by = "seurat_clusters", label = TRUE) + ggtitle("clusters") + theme_bw()
+```
+
+```{r umap-batch, eval = have_obj, fig.width = 8, fig.height = 6}
+DimPlot(o, group.by = CONFIG$batch_key) + ggtitle(paste("by", CONFIG$batch_key)) + theme_bw()
+```
+
+## マーカー遺伝子（上位）
+
+```{r markers, eval = TRUE}
+# outputs/tables に保存済みの top マーカー表を読むだけ。
+top_path <- here::here("outputs", "tables", "tbl02_markers_top10.csv")
+if (file.exists(top_path)) {
+  knitr::kable(utils::read.csv(top_path), caption = "クラスタ別 top10 マーカー")
+} else {
+  cat("`outputs/tables/tbl02_markers_top10.csv` が未生成（`analysis/03_markers.R` を実行）。\n")
+}
+```
+
+## セッション情報（再現性）
+
+```{r sessioninfo}
+sessionInfo()
+```

@@ -10,7 +10,9 @@ options(repos = c(CRAN = ppm))
 Sys.setenv(RENV_CONFIG_PPM_ENABLED = "TRUE")
 if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")
 
-pkgs <- c("Seurat", "harmony", "dplyr", "patchwork", "ggplot2", "Matrix", "data.table")
+# here=ルート相対パス解決 / yaml=config.yaml 読込（① 標準で必須）。
+pkgs <- c("Seurat", "harmony", "dplyr", "patchwork", "ggplot2", "Matrix", "data.table",
+          "here", "yaml")
 
 fresh_install <- function() {
   message("[install_deps] 新規 install + snapshot（renv.lock を生成）")
