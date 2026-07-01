@@ -1,0 +1,17 @@
+[project]
+name = "rnaseq-primary"
+version = "0.1.0"
+description = "bulk RNA-seq 1 次解析（取得系 Python 依存）: 公開 FASTQ 取得 + config 読取"
+requires-python = ">=3.11"
+# 取得・変換系の Python 依存。版は uv で固定する:
+#   uv lock && uv sync        # uv.lock を生成/更新（omics-dev イメージ内）
+# ※ 版ピンの SSoT は uv.lock（生成後）。本 pyproject は依存宣言。
+dependencies = [
+  "pyyaml>=6.0",       # config.yaml 読取（python/config.py）
+  "pysradb>=2.0",      # SRA メタデータ/実行 accession 解決
+  "ffq>=0.3",          # accession -> FASTQ の DL URL 解決
+  "requests>=2.31",    # HTTP 取得の下支え
+]
+
+[tool.uv]
+# uv がロックする対象は上記 dependencies。再現は uv.lock を commit して sync する。
