@@ -1,25 +1,30 @@
-# 大容量データ（git 管理外）
-data/raw/
-data/reference/
-data/processed/
+# 大容量データ・中間生成物（git 管理外）
+data/
+*.rds
+*.tar
+*.tar.gz
+*.h5
+*.h5ad
 
-# R
+# R / renv（library 本体は追跡しない。renv.lock と activate.R は追跡する）
 .Rhistory
 .RData
 .Rproj.user/
 renv/library/
 renv/staging/
 renv/cellar/
+renv/local/
+renv/lock/
+renv/python/
+renv/sandbox/
 
 # Python
 __pycache__/
 *.pyc
 .venv/
 
-# OS
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
