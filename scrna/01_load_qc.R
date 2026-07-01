@@ -5,8 +5,11 @@ source("00_config.R")
 source("R/load_data.R")
 
 objs <- load_samples(CONFIG)
-merged <- if (length(objs) == 1) objs[[1]]
-          else merge(objs[[1]], y = objs[-1], add.cell.ids = names(objs))
+if (length(objs) == 1) {
+  merged <- objs[[1]]
+} else {
+  merged <- merge(objs[[1]], y = objs[-1], add.cell.ids = names(objs))
+}
 merged <- JoinLayers(merged)   # Seurat v5: sample ごとの layer を 1 つに結合
 merged[["percent.mt"]] <- PercentageFeatureSet(merged, pattern = CONFIG$mito_pattern)
 cat(sprintf("pre-QC: %d cells\n", ncol(merged)))
