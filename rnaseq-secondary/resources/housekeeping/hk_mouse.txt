@@ -1,0 +1,45 @@
+# マウス housekeeping 遺伝子（n=1 DEG の common.dispersion 推定用・edgeR）
+# ---------------------------------------------------------------------------
+# ヒト HK パネル（Eisenberg & Levanon 2013 + 古典的リファレンス遺伝子）の
+# マウス ortholog / 慣用シンボル（MGI 準拠の Title-case）の **curated 部分集合**。
+# 自分の count 行列のアノテーションに一致させること（不一致行は自動で無視される）。
+# 差し替えは config.yaml の edger.hk_gene_file で行う。
+# 形式: 1 行 1 遺伝子シンボル。'#' 始まりの行と空行は無視。
+#
+Actb
+Gapdh
+B2m
+Hprt
+Tbp
+Ppia
+Pgk1
+Rpl13a
+Rplp0
+Ywhaz
+Sdha
+Ubc
+Gusb
+Tfrc
+Hmbs
+Polr2a
+Eef1a1
+Rps18
+Rpl13
+Tubb5
+G6pdx
+Ldha
+Nono
+Pum1
+Mrpl19
+Rplp2
+Psmc4
+Ubb
+Gpi1
+Vcp
+Vps29
+Psmb2
+Psmb4
+Reep5
+Snrpd3
+Chmp2a
+Emc7

@@ -1,0 +1,47 @@
+# {{PROJECT_NAME}}
+
+bulk RNA-seq **2 次解析**（counts → DEG）プロジェクト。正準 object=SummarizedExperiment、
+DEG は DESeq2 / edgeR 両対応。**n=1（各群 1 サンプル）**は edgeR の housekeeping 分散で解く。
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## クイックスタート
+
+```bash
+Rscript install_deps.R              # 解析環境を復元（renv.lock で版固定・Bioc 3.20）
+bash fetch_data.sh                  # counts を data/ に用意（編集して使う）
+# /scaffold-rnaseq-secondary を実行して config.yaml と AGENTS.md 固有節を対話で埋める
+Rscript analysis/01_build_se.R      # counts+metadata → data/processed/se.rds
+Rscript analysis/02_de.R            # SE → DEG（config$method で DESeq2/edgeR/both）
+Rscript analysis/03_figures.R       # PCA / MA / volcano / heatmap（PNG+PDF）
+quarto render reports/report.qmd    # レポート（保存済み object を読むだけ）
+work-save data/processed outputs reports   # HDD へ退避
+```
+
+## ディレクトリ構造（analysis-template-standard 準拠）
+
+```
+.
+├── config.yaml            ★編集する事実層（design/contrast/method/samples/HK）
+├── analysis/              番号付き実行スクリプト（パイプライン本体）
+│   ├── 01_build_se.R      counts+metadata → SummarizedExperiment（data/processed/se.rds）
+│   ├── 02_de.R            SE → DEG（DESeq2/edgeR/両走一致度）
+│   └── 03_figures.R       PCA/MA/volcano/top-DEG heatmap（save_fig で PNG+PDF）
+├── R/                     関数定義（analysis から source）
+│   ├── helpers.R          出力ハーネス save_fig/save_table/captions
+│   ├── build_se.R         SE 構築 / design.R  design・contrast 解決
+│   ├── de_deseq2.R de_edger.R  各エンジン / de_common.R  統一整形・一致度
+│   └── housekeeping.R     HK リスト読込
+├── python/fetch_counts.py 取得変換（counts を gene×sample TSV に正規化）
+├── resources/housekeeping/  同梱 HK リスト（hk_human.txt / hk_mouse.txt）
+├── data/{raw,interim,processed}/  3 層データ（git 非追跡）
+├── outputs/{tables,figures}/      成果物（git 追跡）
+├── reports/report.qmd     Quarto レポート（計算しない・読むだけ）
+├── captions.tsv           図表 → 説明 → 由来スクリプトの索引
+├── renv.lock              R+Bioconductor 版固定（Bioc 3.20 明示）
+├── pyproject.toml         Python 版固定（uv lock で uv.lock 生成）
+└── AGENTS.md              解析規約（要読）/ CLAUDE.md=symlink
+```
+
+詳しい規約・n=1 DEG の勘所は **`AGENTS.md`** を参照。

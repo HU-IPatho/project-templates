@@ -1,0 +1,83 @@
+---
+title: "bulk RNA-seq 2 次解析レポート"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+---
+
+<!--
+計算分離（spec 準拠）: 本レポートは analysis/01-03 が data/processed に保存した
+se.rds / de.rds と outputs/ の図表を **読むだけ**。重い計算（SE 構築・DEG・作図）は
+再実行しない（レンダリングの決定性・低コスト化・数値/図の乖離防止）。
+レンダリング前に `Rscript analysis/01_build_se.R && Rscript analysis/02_de.R &&
+Rscript analysis/03_figures.R` を済ませておくこと。
+-->
+
+```{r setup}
+library(here)
+library(yaml)
+library(SummarizedExperiment)
+library(knitr)
+source(here::here("R", "helpers.R"))   # `%||%`
+cfg <- yaml::read_yaml(here::here("config.yaml"))
+se  <- readRDS(here::here("data", "processed", "se.rds"))
+de  <- readRDS(here::here("data", "processed", "de.rds"))
+captions <- utils::read.delim(here::here("captions.tsv"))
+```
+
+## 概要
+
+```{r overview}
+knitr::kable(data.frame(
+  項目 = c("遺伝子数", "サンプル数", "DEG エンジン", "対比", "FDR 閾値"),
+  値   = c(nrow(se), ncol(se), cfg$method,
+           paste(names(cfg$contrasts), collapse = ", "),
+           cfg$fdr %||% 0.05)
+))
+```
+
+サンプルシート:
+
+```{r samples}
+knitr::kable(as.data.frame(SummarizedExperiment::colData(se)))
+```
+
+n=1（各群 1 サンプル）で edgeR を使った場合、DEG は housekeeping 分散に基づく
+**探索的**な結果であり、FDR/有意性の解釈は限定的（`de.rds` の `disp_source` を参照）。
+
+```{r n1-note}
+if (!is.null(de$edgeR)) {
+  cat("edgeR 分散の由来:", de$edgeR$disp_source,
+      sprintf("(common.dispersion=%.4f, BCV=%.3f)",
+              de$edgeR$common.dispersion, de$edgeR$bcv), "\n")
+}
+```
+
+## 図
+
+```{r figures, results="asis"}
+fig_dir <- here::here("outputs", "figures")
+pngs <- sort(list.files(fig_dir, pattern = "\\.png$", full.names = TRUE))
+for (f in pngs) {
+  id <- sub("_.*$", "", basename(f))
+  cap <- captions$description[match(id, captions$id)]
+  cat(sprintf("\n![%s](%s)\n\n", ifelse(is.na(cap), basename(f), cap), f))
+}
+```
+
+## DEG 表（各対比の上位）
+
+```{r tables, results="asis"}
+tbl_dir <- here::here("outputs", "tables")
+tsvs <- sort(list.files(tbl_dir, pattern = "^deg_.*\\.tsv$", full.names = TRUE))
+for (f in tsvs) {
+  d <- utils::read.delim(f)
+  d <- d[order(d$padj), ]
+  cat("\n\n### ", sub("\\.tsv$", "", basename(f)), "\n\n")
+  print(knitr::kable(utils::head(d, 15)))
+}
+```

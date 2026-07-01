@@ -1,0 +1,52 @@
+# ヒト housekeeping 遺伝子（n=1 DEG の common.dispersion 推定用・edgeR）
+# ---------------------------------------------------------------------------
+# 出典: Eisenberg E, Levanon EY. "Human housekeeping genes, revisited."
+#       Trends in Genetics 29(10):569-574, 2013.
+# 本ファイルは同論文が最も安定と報告した参照パネル（11 遺伝子）に、広く使われる
+# 古典的リファレンス遺伝子を加えた **curated 部分集合**（分散推定を安定させるための土台）。
+# 論文の全 ~3804 遺伝子リストに差し替えるには config.yaml の edger.hk_gene_file を
+# その一覧ファイル（1 行 1 シンボル）に向ける。シンボルは自分の count 行列の
+# アノテーション（HGNC / GENCODE 等）に一致させること（不一致行は自動で無視される）。
+# 形式: 1 行 1 遺伝子シンボル。'#' 始まりの行と空行は無視。
+#
+# --- Eisenberg & Levanon 2013 安定パネル ---
+C1orf43
+CHMP2A
+EMC7
+GPI
+PSMB2
+PSMB4
+RAB7A
+REEP5
+SNRPD3
+VCP
+VPS29
+# --- 古典的リファレンス遺伝子 ---
+ACTB
+GAPDH
+B2M
+HPRT1
+TBP
+PPIA
+PGK1
+RPL13A
+RPLP0
+YWHAZ
+SDHA
+UBC
+GUSB
+TFRC
+HMBS
+POLR2A
+EEF1A1
+RPS18
+RPL13
+TUBB
+G6PD
+LDHA
+NONO
+PUM1
+MRPL19
+RPLP2
+PSMC4
+UBB
