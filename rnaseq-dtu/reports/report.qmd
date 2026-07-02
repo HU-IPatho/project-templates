@@ -1,0 +1,91 @@
+---
+title: "RNA-seq DTE/DTU 解析レポート"
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+---
+
+<!--
+計算分離（spec 準拠）: 本レポートは analysis/04-06 が data/processed に保存した
+se_tx.rds / dtu.rds と outputs/ の図表を **読むだけ**。重い計算（import・DTE/DTU 検定・作図）は
+再実行しない（レンダリングの決定性・低コスト化・数値/図の乖離防止）。
+レンダリング前に `Rscript analysis/04_import_tx.R && Rscript analysis/05_dtu.R &&
+Rscript analysis/06_figures.R` を済ませておくこと。
+-->
+
+```{r setup}
+library(here)
+library(yaml)
+library(SummarizedExperiment)
+library(knitr)
+source(here::here("R", "helpers.R"))   # `%||%`
+cfg      <- yaml::read_yaml(here::here("config.yaml"))
+se       <- readRDS(here::here("data", "processed", "se_tx.rds"))
+res      <- readRDS(here::here("data", "processed", "dtu.rds"))
+captions <- utils::read.delim(here::here("outputs", "captions.tsv"))
+```
+
+## 概要
+
+```{r overview}
+knitr::kable(data.frame(
+  項目 = c("transcript 数", "サンプル数", "DTE エンジン", "DTU 手法", "対比", "OFDR 閾値"),
+  値   = c(nrow(se), ncol(se),
+           res$meta$dte_method,
+           paste(res$meta$methods, collapse = ", "),
+           paste(res$meta$contrasts, collapse = ", "),
+           res$meta$fdr %||% 0.05)
+))
+```
+
+サンプルシート:
+
+```{r samples}
+knitr::kable(as.data.frame(SummarizedExperiment::colData(se)))
+```
+
+- **DTE**（differential transcript expression）= 各 transcript の発現「量」の群間差。
+- **DTU**（differential transcript usage）= 遺伝子内の isoform「使用比」の群間変化。
+  DRIMSeq + stageR 二段確認で OFDR（overall false discovery rate）を制御する（rnaseqDTU 準拠）。
+
+## 図
+
+```{r figures, results="asis"}
+fig_dir <- here::here("outputs", "figures")
+pngs <- sort(list.files(fig_dir, pattern = "\\.png$", full.names = TRUE))
+for (f in pngs) {
+  id  <- sub("\\.png$", "", basename(f))
+  cap <- captions$description[match(id, captions$id)]
+  cat(sprintf("\n![%s](%s)\n\n", ifelse(is.na(cap), basename(f), cap), f))
+}
+```
+
+## DTU 結果（対比ごと・stageR 二段の上位遺伝子）
+
+```{r dtu-tables, results="asis"}
+tbl_dir <- here::here("outputs", "tables")
+tsvs <- sort(list.files(tbl_dir, pattern = "_dtu_.*\\.tsv$", full.names = TRUE))
+for (f in tsvs) {
+  d <- utils::read.delim(f)
+  if ("gene_padj" %in% names(d)) d <- d[order(d$gene_padj, d$tx_padj), ]
+  cat("\n\n### ", sub("\\.tsv$", "", basename(f)), "\n\n")
+  print(knitr::kable(utils::head(d, 15)))
+}
+```
+
+## DTE 結果（対比ごとの上位 transcript）
+
+```{r dte-tables, results="asis"}
+tbl_dir <- here::here("outputs", "tables")
+tsvs <- sort(list.files(tbl_dir, pattern = "_dte_.*\\.tsv$", full.names = TRUE))
+for (f in tsvs) {
+  d <- utils::read.delim(f)
+  if ("padj" %in% names(d)) d <- d[order(d$padj), ]
+  cat("\n\n### ", sub("\\.tsv$", "", basename(f)), "\n\n")
+  print(knitr::kable(utils::head(d, 15)))
+}
+```

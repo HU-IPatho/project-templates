@@ -1,0 +1,54 @@
+# {{PROJECT_NAME}}
+
+transcript-level **DTE/DTU 解析**（Salmon → tximport(dtuScaledTPM) → DRIMSeq+stageR / DESeq2・edgeR）。
+既知 isoform の発現量差（DTE）と使用比変化（DTU=isoform switching）を FASTQ から再現性高く回す。
+② rnaseq-secondary（gene-level DE）の姉妹＝transcript-level 2 次解析。
+
+- Author: {{AUTHOR}}
+- Created: {{DATE}}
+
+## クイックスタート（すべてプロジェクトルートから）
+
+```bash
+Rscript install_deps.R              # R+Bioconductor 環境を復元（renv.lock で版固定・Bioc 3.23）
+uv sync                             # Python 取得系（pysradb/ffq）を uv.lock で固定
+# /scaffold-rnaseq-dtu を実行して config.yaml と AGENTS.md 固有節を対話で埋める（grill-me 駆動）
+python3 analysis/01_fetch.py        # 複製検査 → 公開 FASTQ を data/raw へ（共有由来は work-fetch）
+bash analysis/02_qc_fastp.sh        # fastp トリム → FastQC
+bash analysis/03_salmon_quant.sh    # salmon 定量(長時間→内部で job-run) → MultiQC 集約
+Rscript analysis/04_import_tx.R     # tximport(txOut,dtuScaledTPM) → tx-level SE（data/processed/se_tx.rds）
+Rscript analysis/05_dtu.R           # DTE(DESeq2/edgeR) + DTU(DRIMSeq+stageR) → data/processed/dtu.rds
+Rscript analysis/06_figures.R       # isoform 使用比プロット（主役）+ DTE volcano（PNG+PDF）
+quarto render reports/report.qmd    # レポート（保存済み object を読むだけ）
+work-save data/processed outputs reports   # HDD へ退避
+```
+
+## ディレクトリ構造（analysis-template-standard 準拠）
+
+```
+.
+├── config.yaml            ★編集する事実層（reference/design/contrast/dte/dtu/samples）
+├── analysis/              番号付き実行スクリプト（パイプライン本体）
+│   ├── 01_fetch.py        複製検査 + 公開 FASTQ 取得 → data/raw
+│   ├── 02_qc_fastp.sh     fastp トリム → FastQC
+│   ├── 03_salmon_quant.sh salmon 定量(decoy-aware・--gcBias・任意 --numBootstraps) → MultiQC
+│   ├── 04_import_tx.R      tximport(txOut,dtuScaledTPM) → tx-level SE（se_tx.rds）
+│   ├── 05_dtu.R           DTE + DTU 検定 → dtu.rds（+ 表を出力ハーネス）
+│   └── 06_figures.R       isoform 使用比プロット + DTE volcano（save_fig で PNG+PDF）
+├── R/                     関数定義（analysis から source）
+│   ├── helpers.R          出力ハーネス save_fig/save_table/captions
+│   ├── design.R           design/contrast 解決 + 複製ガード check_replicates
+│   ├── dte.R              tx-level DTE（DESeq2/edgeR エンジン）
+│   ├── dtu.R              DTU（DRIMSeq+stageR / 任意 swish・dexseq）
+│   └── plots.R            isoform 使用比プロット・DTE volcano
+├── python/                取得・変換モジュール（config.py / fetch.py）
+├── data/{raw,interim,processed}/  3 層データ（git 非追跡）
+├── outputs/{tables,figures}/      成果物（git 追跡）・captions.tsv
+├── reports/report.qmd     Quarto レポート（計算しない・読むだけ）
+├── install_deps.R         renv 環境構築（restore）
+├── renv.lock              R+Bioconductor 版固定（Bioc 3.23 明示）※dogfood で確定
+├── pyproject.toml         Python 依存宣言（uv lock で uv.lock を生成）
+└── AGENTS.md              解析規約（要読・CLAUDE.md は symlink）
+```
+
+詳しい規約・DTE vs DTU の違い・複製必須・任意手法（swish/dexseq/ISA）は **`AGENTS.md`** を参照。
