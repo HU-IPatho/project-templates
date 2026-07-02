@@ -41,12 +41,12 @@ plot_isoform_proportions <- function(se, genes, gcol,
   df <- isoform_proportion_df(se, genes, gcol)
   if (is.null(df) || nrow(df) == 0) {
     return(ggplot2::ggplot() +
-             ggplot2::labs(title = paste0(title, " — 対象 DTU 遺伝子なし")))
+             ggplot2::labs(title = paste0(title, " - no DTU genes")))
   }
   ggplot2::ggplot(df, ggplot2::aes(x = feature_id, y = proportion, fill = group)) +
     ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.8)) +
     ggplot2::facet_wrap(~ gene_id, scales = "free_x") +
-    ggplot2::labs(title = title, x = "transcript", y = "isoform proportion (群平均)") +
+    ggplot2::labs(title = title, x = "transcript", y = "isoform proportion (group mean)") +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 6))
 }
 
