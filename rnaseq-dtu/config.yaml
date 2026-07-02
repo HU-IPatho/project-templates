@@ -1,0 +1,84 @@
+# ============================================================================
+# rnaseq-dtu 設定（事実データ層）— ★編集するのは基本このファイルだけ★
+# analysis/01-06 のスクリプトと R/ 関数はここを読んで動く。narrative な固有規約は AGENTS.md へ。
+# 着手時は /scaffold-rnaseq-dtu（.claude/skills/scaffold-rnaseq-dtu）が対話でここを埋める。
+# ============================================================================
+
+project:
+  name: rnaseq-dtu              # プロジェクト名（README/レポートに使う）
+  organism: "Homo sapiens"      # "Homo sapiens" / "Mus musculus"
+  paired_end: true              # ペアエンドなら true、シングルエンドなら false
+
+# --- 参照（decoy-aware salmon index / tx2gene / GTF）— ③ rnaseq-primary と同形 ---
+# ★管理者が /work/shared に事前構築し、研究員は RO 参照する（テンプレは index を同梱しない）。
+# コードが参照するキー: salmon_index（03_salmon_quant.sh）と tx2gene（04_import_tx.R / R/dtu.R）のみ。
+# gtf / txome.* は本テンプレ（tximport 経路。swish も skipMeta=TRUE）では **コードから参照されない
+# provenance 専用**（index を作った参照 FASTA/GTF の来歴記録）。削除せず来歴として残す。
+#   ※ ③ rnaseq-primary は tximeta の linkedTxome を使うため txome.* を実際に読む点が異なる。
+reference:
+  salmon_index: /work/shared/refs/salmon/gencode.v46.sa_decoy       # 【code 参照】selective-alignment 用 decoy-aware index
+  tx2gene:      /work/shared/refs/tx2gene/gencode.v46.tx2gene.tsv   # 【code 参照】transcript_id -> gene_id（DRIMSeq の gene グルーピング）
+  gtf:          /work/shared/refs/gtf/gencode.v46.annotation.gtf    # 【provenance 専用・未参照】
+  # 【provenance 専用・未参照】txome.* は記録用（swish は skipMeta ゆえ tximeta メタを読まない）。
+  txome:
+    source:   GENCODE
+    organism: "Homo sapiens"
+    release:  "46"
+    genome:   GRCh38
+    fasta:    /work/shared/refs/fasta/gencode.v46.transcripts.fa
+    gtf:      /work/shared/refs/gtf/gencode.v46.annotation.gtf
+
+# --- 公開データ取得（任意）--------------------------------------------------
+# analysis/01_fetch.py が pysradb/ffq でここの accession を data/raw に取得する。
+# 既に data/raw に FASTQ がある場合は空でよい。
+fetch:
+  accessions: []                # 例: [SRR1234567, SRR1234568]
+
+# --- サンプル表 -------------------------------------------------------------
+# fastq は data/raw 配下。fq2 は paired_end=true のときのみ使う。group は design.group_col の水準。
+# ★DTU/DTE は各群 n>=2 が必須（01/05 で複製検査 → n=1 は fail-fast で ② へ誘導）。
+#   下の既定は 2 群 × 各 2 複製の最小構成。
+samples:
+  - {id: ctrl_rep1, fq1: data/raw/ctrl_rep1_R1.fastq.gz, fq2: data/raw/ctrl_rep1_R2.fastq.gz, group: ctrl}
+  - {id: ctrl_rep2, fq1: data/raw/ctrl_rep2_R1.fastq.gz, fq2: data/raw/ctrl_rep2_R2.fastq.gz, group: ctrl}
+  - {id: trt_rep1,  fq1: data/raw/trt_rep1_R1.fastq.gz,  fq2: data/raw/trt_rep1_R2.fastq.gz,  group: trt}
+  - {id: trt_rep2,  fq1: data/raw/trt_rep2_R1.fastq.gz,  fq2: data/raw/trt_rep2_R2.fastq.gz,  group: trt}
+
+# --- fastp（アダプタトリム・品質フィルタ）-----------------------------------
+fastp:
+  threads: 4
+  extra_flags: ["--detect_adapter_for_pe"]
+
+# --- salmon quant（selective alignment + decoy-aware + GC/seq bias 補正）-----
+salmon:
+  libtype: A                    # A=自動判定（推奨）
+  threads: 8
+  extra_flags: ["--gcBias", "--seqBias", "--validateMappings"]   # 契約: --gcBias 必須
+  num_bootstraps: 0             # >0 で --numBootstraps を付与（swish の inferential replicates 用）。既定 0＝軽い。
+
+# --- design / contrast（design.R が DTE エンジン入力・DRIMSeq condition に変換）----
+design:
+  group_col: group              # 主たる比較変数（samples の列名）
+  covariates: []                # DTE モデル共変量（バッチ等・空なら []）。単一レベルは自動除外。
+                                # DRIMSeq(DTU) は各 contrast の 2 群比較で condition のみ使う。
+  reference_level: ctrl         # group の基準レベル（対照）
+
+contrasts:                      # 名前: [numerator, denominator]（group のレベル名）
+  trt_vs_ctrl: [trt, ctrl]
+
+# --- DTE（transcript 発現差・② の DESeq2/edgeR エンジンを tx-level に適用）--------
+# 入力は se_tx の assay(counts_dte)＝lengthScaledTPM（DTU の dtuScaledTPM とは別 assay）。
+dte:
+  method: deseq2                # deseq2 / edger / both
+  fdr: 0.05                     # volcano の色分け・有意判定の FDR
+  min_count_sum: 10             # DESeq2 パスの低発現 prefilter（全サンプル合計 count 下限）
+
+# --- DTU（isoform 使用比・DRIMSeq + stageR 二段 OFDR 制御）------------------------
+dtu:
+  methods: [drimseq]            # drimseq(既定) / swish(bootstrap 必須) / dexseq を並べて選択
+  fdr: 0.05                     # stageR の OFDR（overall false discovery rate）
+  n_top: 12                     # 主役図（isoform 使用比）に載せる上位 DTU 遺伝子数
+  # DRIMSeq dmFilter 閾値（標本数依存の min_samps_* は実行時に n / n.small から自動決定）
+  min_gene_expr:    10          # 遺伝子の総 count 下限
+  min_feature_expr: 10          # transcript の count 下限
+  min_feature_prop: 0.1         # transcript の遺伝子内比率の下限
