@@ -15,10 +15,12 @@ Rscript install_deps.R                         # 解析環境を復元（renv.lo
 python python/fetch_data.py GSE134520          # データを data/raw/ へ取得（GEO 例）
 # config.yaml を自分のデータに合わせて編集（loader / batch_key / QC / mito_pattern）
 
-Rscript analysis/01_load_qc.R                              # QC → data/interim/seurat_qc.rds
+Rscript analysis/01_load_qc.R                              # doublet 記録 + QC → data/interim/seurat_qc.rds
 JID=$(job-run --label integrate -- Rscript analysis/02_integrate.R)  # 統合(長時間→job-run)
 job-wait "$JID" --timeout 570
 Rscript analysis/03_markers.R                             # マーカー → outputs/tables/
+Rscript analysis/04_annotate.R                            # 直交レイヤ注釈 + confidence/review → tbl03,tbl04
+# → outputs/tables/tbl03_cluster_evidence.csv を見て annotations.yaml に手動確定を書き、04 を再実行
 quarto render reports/report.qmd                         # レポート（保存済み object を読むだけ）
 work-save data/processed outputs reports                 # HDD へ退避（AGENTS-base 参照）
 ```
@@ -31,15 +33,18 @@ work-save data/processed outputs reports                 # HDD へ退避（AGENT
 
 ```
 .
-├── config.yaml          ★編集するのはここ（データ形式・QC・統合パラメータ＝層3の事実）
+├── config.yaml          ★編集するのはここ（データ形式・QC・統合・アノテ方法論のノブ＝層3の事実）
+├── annotations.yaml     ★手動確定ラベル（04 の evidence を見てクラスタ→系統/悪性/状態を埋める・任意）
 ├── analysis/            番号付き実行スクリプト（パイプライン本体・ルートから実行）
 │   ├── 00_config.R      config.yaml を読む薄いローダ
-│   ├── 01_load_qc.R     読込 → merge → QC        → data/interim/seurat_qc.rds
-│   ├── 02_integrate.R   正規化 → PCA → Harmony → クラスタ → UMAP（長時間）→ data/processed/
-│   └── 03_markers.R     マーカー遺伝子同定       → outputs/tables/
+│   ├── 01_load_qc.R     読込 → merge → doublet 記録 → QC → data/interim/seurat_qc.rds
+│   ├── 02_integrate.R   正規化 →（cell-cycle）→ PCA → Harmony → 複数解像度クラスタ → UMAP（長時間）→ data/processed/
+│   ├── 03_markers.R     クラスタマーカー同定     → outputs/tables/
+│   └── 04_annotate.R    直交レイヤ注釈 + confidence/review routing → tbl03,tbl04 + seurat_annotated.rds
 ├── R/                   R 関数（source される再利用ロジック）
 │   ├── load_data.R      データローダ（tenx / dense・ハマりどころ封入済み）
-│   └── helpers.R        出力ハーネス（save_fig / save_table / captions.tsv）
+│   ├── helpers.R        出力ハーネス（save_fig / save_table / captions.tsv）
+│   └── annotate.R       アノテ方法論ロジック（直交レイヤ/confidence/CNV・参照フック）
 ├── python/fetch_data.py 取得・変換モジュール（GEO/URL → data/raw）
 ├── data/                生データ・中間物（.gitignore 対象・git 非追跡）
 │   ├── raw/             不変の入力層
@@ -58,9 +63,13 @@ work-save data/processed outputs reports                 # HDD へ退避（AGENT
 ## 解析フロー
 
 1. `install_deps.R` — renv で Seurat v5 + Harmony 環境を復元
-2. `analysis/01_load_qc.R` — データ読込・QC フィルタ（→ `data/interim`）
-3. `analysis/02_integrate.R` — 正規化・次元削減・**Harmony 統合**・クラスタリング・UMAP（→ `data/processed`）
-4. `analysis/03_markers.R` — クラスタマーカー同定・アノテーション目安（→ `outputs/tables`）
-5. `reports/report.qmd` — Quarto レポート（保存済み object と outputs を読むだけ・再計算しない）
+2. `analysis/01_load_qc.R` — データ読込・doublet 取扱い記録・QC フィルタ（→ `data/interim`）
+3. `analysis/02_integrate.R` — 正規化・cell-cycle スコア・次元削減・**Harmony 統合**・複数解像度クラスタリング・UMAP（→ `data/processed`）
+4. `analysis/03_markers.R` — クラスタマーカー同定（→ `outputs/tables`）
+5. `analysis/04_annotate.R` — 直交レイヤ注釈（系統/悪性/状態/cell-cycle）・confidence/review routing（→ `outputs/tables`・`seurat_annotated.rds`）
+6. `reports/report.qmd` — Quarto レポート（保存済み object と outputs を読むだけ・再計算しない）
+
+アノテーションは研究室標準 **scrna-annotation-standard**（方法論・`AGENTS.md` 参照）に conform する。numeric 閾値・
+ツール・marker panel は自分のデータで `/grill-me`（grill ゲート）で確定する。
 
 参照実装（フル worked example）: `HU-IPatho/gse134520-scrna-dogfood`

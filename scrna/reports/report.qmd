@@ -19,18 +19,24 @@ execute:
 suppressPackageStartupMessages({ library(here); library(Seurat); library(ggplot2); library(knitr) })
 source(here::here("analysis", "00_config.R"))
 
+# アノテーション済み object があれば優先（04 の産物）、無ければ統合 object（02）を使う。
+ann_path <- here::here("data", "processed", "seurat_annotated.rds")
 obj_path <- here::here("data", "processed", "seurat_integrated.rds")
-have_obj <- file.exists(obj_path)
-if (have_obj) o <- readRDS(obj_path)
+have_obj <- file.exists(ann_path) || file.exists(obj_path)
+if (file.exists(ann_path)) {
+  o <- readRDS(ann_path)
+} else if (file.exists(obj_path)) {
+  o <- readRDS(obj_path)
+}
 ```
 
-本レポートは `analysis/01→02→03` が生成した保存済み成果物を読み込んで提示する。
-数値・図はすべて `data/processed/seurat_integrated.rds` と `outputs/` に由来し、レンダリング時に
+本レポートは `analysis/01→02→03→04` が生成した保存済み成果物を読み込んで提示する。
+数値・図はすべて `data/processed` の正準 object と `outputs/` に由来し、レンダリング時に
 再計算しない（literate だが計算は再実行しない）。
 
 ```{r no-object, eval = !have_obj, results = "asis"}
-cat("> **未計算**: `data/processed/seurat_integrated.rds` が見つからない。",
-    "まず `analysis/01_load_qc.R → 02_integrate.R → 03_markers.R` を実行する。\n")
+cat("> **未計算**: `data/processed/` に object が見つからない。",
+    "まず `analysis/01_load_qc.R → 02_integrate.R → 03_markers.R → 04_annotate.R` を実行する。\n")
 ```
 
 ## クラスタリング（UMAP）
@@ -53,6 +59,25 @@ if (file.exists(top_path)) {
   knitr::kable(utils::read.csv(top_path), caption = "クラスタ別 top10 マーカー")
 } else {
   cat("`outputs/tables/tbl02_markers_top10.csv` が未生成（`analysis/03_markers.R` を実行）。\n")
+}
+```
+
+## アノテーション（直交レイヤ・confidence/review）
+
+```{r annotation-umap, eval = have_obj && ("annotation" %in% colnames(o@meta.data)), fig.width = 8, fig.height = 6}
+# 04 が付けた系統ラベルの UMAP（保存済み・再計算しない）。
+DimPlot(o, group.by = "annotation", label = TRUE) + ggtitle("annotation (lineage)") + theme_bw()
+```
+
+```{r annotation-table, eval = TRUE}
+# tbl04_annotation を読み、review 対象を明示する（marker p 値を confidence に使わない・標準）。
+ann_tbl <- here::here("outputs", "tables", "tbl04_annotation.csv")
+if (file.exists(ann_tbl)) {
+  a <- utils::read.csv(ann_tbl)
+  knitr::kable(a, caption = "クラスタ別 注釈 + confidence / review（review_flag=TRUE は要確認）")
+} else {
+  cat("`outputs/tables/tbl04_annotation.csv` が未生成（`analysis/04_annotate.R` を実行）。",
+      "annotations.yaml に手動確定を書いてから再実行すると最終ラベルが反映される。\n")
 }
 ```
 
