@@ -117,12 +117,20 @@ reference_crosscheck <- function(o, cfg) {
 # --- confidence + review-priority routing（標準の注釈監査層）---
 # 各クラスタに操作的 confidence と review_flag を付す。標準の必須:「marker 遺伝子 p 値を confidence に使わない」。
 # ここでは marker 特異性・系統 margin・組成偏り・（有効時）参照一致/CNV を統合したヒューリスティック。
-# 閾値は「review へ回すトリガー」であり確定閾値ではない（確定は grill ゲート委譲・tune 可能）。
-cluster_confidence <- function(ev, skew_trigger = 0.90) {
-  f_no_hint   <- ev$n_hint_hits == 0                                                   # 系統示唆なし（unknown）
-  f_ambiguous <- ev$lineage_margin == 0                                                # 系統が曖昧（tie）
-  f_skew      <- !is.na(ev$dominant_sample_frac) & ev$dominant_sample_frac >= skew_trigger  # 単一 sample 偏り
-  f_ref_mis   <- !is.na(ev$reference_agreement) & ev$reference_agreement == FALSE       # 参照不一致
+# 閾値は「review へ回すトリガー」であり確定閾値ではない（skew_trigger は config review_triggers から・tune 可能）。
+# sample_class / n_batches で composition トリガーの適用可否を切り替える（下記）。
+cluster_confidence <- function(ev, sample_class = "mixed", n_batches = 2L, skew_trigger = 0.90) {
+  # NA 安全化: marker を 1 つも持たないクラスタ（FindAllMarkers が閾値を通す positive marker を返さない）は
+  # outer merge で n_hint_hits/lineage_margin が NA になる。NA を安全側（示唆なし＝review 対象）に倒す。
+  hits   <- ifelse(is.na(ev$n_hint_hits),    0, ev$n_hint_hits)
+  margin <- ifelse(is.na(ev$lineage_margin), 0, ev$lineage_margin)
+  f_no_hint   <- hits == 0                                                   # 系統示唆なし（unknown）
+  f_ambiguous <- margin == 0                                                 # 系統が曖昧（tie）
+  # composition skew は「multi-replicate 比較設計」依存の design-specific（標準 R7/R8）。単一 sample/batch 設計と
+  # 純細胞株（annex: composition フラグ無効化）では自動で無効化する（過検知回避・標準の非適用条件に一致）。
+  skew_applicable <- (n_batches >= 2) && !identical(sample_class, "pure_cell_line")
+  f_skew <- skew_applicable & !is.na(ev$dominant_sample_frac) & ev$dominant_sample_frac >= skew_trigger
+  f_ref_mis <- !is.na(ev$reference_agreement) & ev$reference_agreement == FALSE  # 参照不一致
   ev$review_flag <- f_no_hint | f_ambiguous | f_skew | f_ref_mis
   ev$review_reason <- vapply(seq_len(nrow(ev)), function(i) {
     r <- c(if (f_no_hint[i])   "no_lineage_hint"    else NULL,

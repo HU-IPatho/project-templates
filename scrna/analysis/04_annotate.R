@@ -32,7 +32,14 @@ tabs <- list(
 tabs <- Filter(Negate(is.null), tabs)
 tabs <- lapply(tabs, function(d) { d$cluster <- as.character(d$cluster); d })
 ev <- Reduce(function(a, b) merge(a, b, by = "cluster", all = TRUE), tabs)
-ev <- cluster_confidence(ev)                 # confidence + review_flag + review_reason
+# marker を 1 つも持たないクラスタは outer merge で marker 由来列が NA になる → 安全側に coalesce
+# （示唆なし＝unknown / 0。review_flag は下で立つ）。
+ev$suggested_lineage[is.na(ev$suggested_lineage)] <- "unknown"
+ev$n_hint_hits[is.na(ev$n_hint_hits)] <- 0L
+ev$lineage_margin[is.na(ev$lineage_margin)] <- 0L
+n_batches <- length(unique(o@meta.data[[CONFIG$batch_key]]))
+ev <- cluster_confidence(ev, sample_class = CONFIG$sample_class,
+                         n_batches = n_batches, skew_trigger = CONFIG$review_triggers$skew_trigger)
 ev <- ev[order(suppressWarnings(as.numeric(ev$cluster)), ev$cluster), ]
 save_table(ev, "tbl03", "cluster_evidence", "04_annotate.R")
 

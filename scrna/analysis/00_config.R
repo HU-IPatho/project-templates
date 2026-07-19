@@ -13,9 +13,11 @@ for (k in c("min_cells", "min_features", "n_variable", "n_pcs", "dims", "resolut
 # marker_hint は named character（遺伝子 → 細胞種ラベル）に正規化する。
 CONFIG$marker_hint <- unlist(CONFIG$marker_hint)
 
-# --- 標準 conform 由来キーの既定補完（古い config でも動く後方互換・欠落時は安全な既定へ）---
-# 欠けたキーは「標準の既定 baseline（追加処理 off・記録のみ）」に落とす。既存プロジェクトの config を
-# 壊さずに新しい 02/04 が走るようにするための defensive defaults。
+# --- 標準 conform 由来キーの既定補完（後方互換・欠落時は安全な既定へ）---
+# 補完対象は「標準 conform で新設したキー」だけ（sample_class/assay/resolutions/doublet/cell_cycle/reference/
+# cnv_gate/review_triggers）。これらを欠く旧テンプレ由来 config でも新しい 02/04 が走るための defensive defaults。
+# 既存の必須キー（qc/mito_pattern/batch_key/loader/data_dir/n_variable/n_pcs/dims）は本テンプレが常に同梱するため
+# ここでは補完しない（欠落は config 破損＝下流で明示エラーになる）。
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 CONFIG$sample_class <- CONFIG$sample_class %||% "mixed"
@@ -45,6 +47,10 @@ CONFIG$cnv_gate <- CONFIG$cnv_gate %||% list()
 CONFIG$cnv_gate$enabled <- isTRUE(CONFIG$cnv_gate$enabled %||% FALSE)
 CONFIG$cnv_gate$tool    <- CONFIG$cnv_gate$tool    %||% "none"
 CONFIG$cnv_gate$normal_reference <- CONFIG$cnv_gate$normal_reference %||% ""
+
+# review_triggers（04 の review-priority routing・固定閾値でなく tune 可なヒューリスティック）。
+CONFIG$review_triggers <- CONFIG$review_triggers %||% list()
+CONFIG$review_triggers$skew_trigger <- as.numeric(CONFIG$review_triggers$skew_trigger %||% 0.90)
 
 # 純細胞株では malignancy が a priori 既知ゆえ CNV ゲートは意味を成さない（標準 annex）。
 # enabled のまま pure_cell_line が来たら fail-safe で off にし、警告する（silent に走らせない）。

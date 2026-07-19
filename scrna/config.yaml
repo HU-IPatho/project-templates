@@ -14,7 +14,9 @@
 #                         確定操作はこの mixed 組織 scRNA に scope する。
 # pure_cell_line        : 純細胞株。malignancy は a priori 既知ゆえ CNV ゲートを省略し、EMT を実 program
 #                         として扱い、反復単位を independent culture replicate / line に置換し、
-#                         composition フラグを無効化する（標準の純細胞株 annex）。
+#                         composition フラグを無効化する（標準の純細胞株 annex）。→ この class を選ぶと 04 が
+#                         CNV ゲートと composition review トリガーを自動 off にする（置換 confound=culture
+#                         replicate 由来指標は grill ゲートで確定・v0 scaffold では未実装）。
 sample_class: mixed          # tissue | mixed | pure_cell_line
 
 # --- assay（適用範囲・「assay 非依存」と断定しない）---
@@ -104,3 +106,10 @@ cnv_gate:
   enabled: false
   tool: none               # none | infercnv | copykat（要 renv 追加。researcher が選択）
   normal_reference: ""      # 非悪性 diploid 参照（クラスタ名 or 免疫/stromal 指定。matched normal 無ければ免疫/stromal）
+
+# --- review トリガー（04 の review-priority routing・固定閾値でなく「review へ回す」ヒューリスティック）---
+# 標準: composition confound 指標は確定閾値でなく review へ回すヒューリスティック trigger（確定は grill ゲート委譲）。
+# 値は自分のデータで tune 可能。単一 sample 設計・純細胞株では composition 由来トリガーは 04 が自動で無効化する
+# （standard: composition confound は multi-replicate 比較設計依存の design-specific ゆえ）。
+review_triggers:
+  skew_trigger: 0.90       # 単一 sample がクラスタ細胞の 90% 以上を占めたら review へ（default 例・tune 可）

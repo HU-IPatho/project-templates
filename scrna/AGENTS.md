@@ -55,17 +55,24 @@ single-cell RNA-seq を**再現性高く**解析する雛形。参照実装＝`H
 - **cluster-then-marker（クラスタ先行→クラスタ単位手動マーカー解釈）**: **手動解釈が最終権威**。04 は自動で
   identity を確定せず、クラスタごとの証拠（top marker・hint 一致・cell-cycle・組成・（有効時）CNV/参照）を
   `tbl03_cluster_evidence` に組み、**confidence と review-priority** を付す。最終ラベルは **`annotations.yaml`**
-  に研究員が手で埋める（evidence を見て確定）。
+  に研究員が手で埋める（evidence を見て確定）。**クラスタ＝細胞型ではない**——クラスタ内異質性があり、
+  composition が変わるとラベルは不安定化しうる。曖昧/境界クラスタは subset 再クラスタか cell-level クロスチェックで
+  再検証する。
 - **marker p 値を絶対視しない**（同一データで clustering と marker を決める double-dipping で過大化）。effect size
   (`avg_log2FC`)・特異性(`pct.1/pct.2`)・文献照合・標本横断の再現性で総合判断する。
 - **複数解像度をスキャン**（`config.yaml: resolutions`）: 単一固定にせず over/under-clustering を評価（02 が
   各解像度でクラスタし比較図を出す。primary=`resolution` を `seurat_clusters` に採用）。曖昧/境界クラスタは
-  subset 再クラスタで再検証してよい（optional・使うなら double-dipping 回避のガードレール必須）。
+  **反復 subset 再クラスタ**で再検証してよい（optional）。使う場合は**3 ガードレール必須**: (1) 再クラスタ解像度を
+  統計的区別可能性で正当化（恣意的 resolution で細分を状態と決めつけない）、(2) double-dipping 回避（同一データの
+  subtype marker は独立検証か null 補正を要する）、(3) subset 依存の score/integration 落とし穴の回避（batch 過補正
+  回避・rank-based score・global と refined 間でスコアを直接比較しない）。低信頼ラベルは強引に細分せず粗ラベル/
+  unknown へ後退する（reject option）。
 - **直交レイヤで記述**: 系統/細胞型（marker/参照）・悪性性（CNV ゲート）・状態（program）・cell-cycle（直交軸）。
   **cell-cycle は identity と直交に「保持」**し（`config.yaml: cell_cycle.score`）、**無条件の regression 除去はしない**
   （`cell_cycle.regress` は identity 歪みが実証された時だけ TRUE）。
 - **module/score は marker 従属の補強証拠**（identity を単独で上書きしない）。腫瘍層で高間葉スコアを EMT 癌細胞と
-  即断しない（CAF/内皮で最高値になり腫瘍純度を追跡する）。
+  即断しない（CAF/内皮で最高値になり腫瘍純度を追跡する）。score を足すなら **composition 非依存の rank-based
+  手法（AUCell/UCell 等）を優先**し、**bulk 由来 ssGSEA/GSVA を single-cell identity の単独判定に使わない**。
 - **悪性は marker 単独で呼ばない**（`config.yaml: cnv_gate`）: aneuploidy を持ちうる固形上皮 carcinoma では
   inferred CNV を直交検証ゲートに課す。**ゲートは非対称**（CNV 陽性→悪性は強いが、CNV 陰性→非悪性とは限らず
   「保留(hold)」）。**near-diploid 腫瘍種（前立腺癌・甲状腺癌・ccRCC・小児/造血器腫瘍・sarcoma 等）と純細胞株は
