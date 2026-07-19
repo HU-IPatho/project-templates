@@ -1,9 +1,28 @@
 # ============================================================================
 # scRNA-seq パイプライン設定（層3＝このプロジェクト固有の「事実」の SSoT）
 # ★自分のデータに合わせて編集するのはこのファイルだけ★
-# analysis/00_config.R がこれを読み CONFIG list を組む。01/02/03 は CONFIG を使う。
+# analysis/00_config.R がこれを読み CONFIG list を組む。01/02/03/04 は CONFIG を使う。
 # 初回は同梱 scaffold（/scaffold-config）で /grill-me を走らせて対話的に埋められる。
+#
+# アノテーションの方法論は研究室標準 scrna-annotation-standard（v0・方法論のみ）に conform する。
+# 標準の numeric 閾値・ツール pin・marker panel は TBD（dataset-tuned・確定は /grill-me = grill ゲート）。
+# ここの数値は「default 例」であり、自分のデータで violin plot・解像度スキャンを見てから決める。
 # ============================================================================
+
+# --- sample-class 軸（アノテ標準の前段軸・方法論の適用条件を分岐する）---
+# tissue / mixed        : 腫瘍+正常/免疫/間質が混在しうる組織（内在正常参照を持ちうる）。標準 v0 の
+#                         確定操作はこの mixed 組織 scRNA に scope する。
+# pure_cell_line        : 純細胞株。malignancy は a priori 既知ゆえ CNV ゲートを省略し、EMT を実 program
+#                         として扱い、反復単位を independent culture replicate / line に置換し、
+#                         composition フラグを無効化する（標準の純細胞株 annex）。→ この class を選ぶと 04 が
+#                         CNV ゲートと composition review トリガーを自動 off にする（置換 confound=culture
+#                         replicate 由来指標は grill ゲートで確定・v0 scaffold では未実装）。
+sample_class: mixed          # tissue | mixed | pure_cell_line
+
+# --- assay（適用範囲・「assay 非依存」と断定しない）---
+# 本雛形の実証基盤は droplet-based 3′ scRNA。snRNA / Smart-seq（full-length）/ spatial へは marker 適合性・
+# QC 閾値・ambient 挙動・module score の分母を再校正して初めて適用可（標準の assay scope 条項）。
+assay: droplet_3prime
 
 # --- データ形式（ローダの選択）---
 # tenx  : 10x Cell Ranger 出力（各 sample ディレクトリに
@@ -28,14 +47,39 @@ qc:
   percent_mt_max: 20
 mito_pattern: "^MT-"        # ミトコンドリア遺伝子: ヒト="^MT-" / マウス="^mt-"
 
+# --- doublet の取扱い（「有無・手法」を記録する。除去可否/手法/閾値の科学判断は grill ゲート委譲）---
+# 標準は doublet 除去そのものを義務化しない（QC/doublet の底上げは別サイクル = 標準の numeric-TBD）。
+# ただし「取扱いを記録する」ことは形の要件（form-lint / 監査層）。既定 baseline は除去なし。
+#   method: none        → 除去しない。rationale に理由を必ず残す（01_load_qc.R が記録・DOUBLET 行に出力）。
+#   method: scDblFinder → 01_load_qc.R が scDblFinder で per-sample にスコアし予測 doublet を除去
+#                          （要 renv 追加。filtered/cell-called 行列では検出力が落ちる点に留意）。
+doublet:
+  method: none
+  rationale: "既定 baseline は doublet 除去なし。実施要否・手法・閾値は自分のデータで /grill-me（grill ゲート）で確定する。"
+
 # --- 統合（Harmony）と次元削減 ---
 batch_key: sample          # バッチ効果を除くキー（複数 sample を統合する軸）
 n_variable: 2000           # 高変動遺伝子の数
 n_pcs: 30                  # PCA 次元数
 dims: 30                   # 近傍/UMAP に使う次元数
-resolution: 0.5            # クラスタ解像度（大きいほど細かく分かれる）
 
-# --- アノテーションの当たり付け（存在すればマーカー数を報告するだけの目安）---
+# クラスタ解像度。標準は「単一固定でなく複数解像度をスキャンし安定性・over-clustering を評価」を要求する。
+# resolution   : primary（seurat_clusters に採用する解像度・下流 03/04 が使う）。
+# resolutions  : 走査する解像度群（02 が各々でクラスタし、比較 UMAP と cluster 数を出す）。
+resolution: 0.5
+resolutions: [0.3, 0.5, 0.8]
+
+# --- cell-cycle（identity と直交な別軸。無条件の regression 除去はしない＝標準）---
+# score  : S/G2M スコアと Phase を付す（Seurat 同梱 cc.genes.updated.2019）。identity と直交に「保持」する。
+# regress: 既定 FALSE。cell-cycle が identity を歪め関心生物を mask すると実証された場合のみ TRUE にする。
+cell_cycle:
+  score: true
+  regress: false
+
+# --- アノテーション: 系統マーカーの当たり付け（従属補強証拠）---
+# marker_hint は cluster→lineage の当たり付け。identity は lineage 決定 marker でクラスタ単位に確定し、
+# module/score 単独で identity を上書きしない（標準: module-score は marker 従属の補強証拠）。
+# 遺伝子・細胞種呼称は生物学固有ゆえ標準では TBD＝自分の組織に合わせて編集する。
 marker_hint:
   EPCAM: epithelial
   PTPRC: immune
@@ -44,3 +88,28 @@ marker_hint:
   LYZ: myeloid
   PECAM1: endothelial
   ACTA2: fibro/smooth
+
+# --- 参照ベース クロスチェック（two-track・適合アトラス存在時は必須 complementary）---
+# 適合する参照アトラスが在るとき、参照ベース（SingleR / Azimuth 等）を必須の complementary クロスチェックとして
+# 併走させ、不一致クラスタを review へ routing する（無条件 primary/必須にはしない two-track）。適合判定は TBD。
+#   enabled: true にして method を指定すると 04_annotate.R が参照ラベルと手動注釈の一致を評価する。
+reference:
+  enabled: false
+  method: none             # none | singler | azimuth
+
+# --- 悪性判定の直交 CNV 検証ゲート（carcinoma 限定・tool-agnostic・非対称）---
+# aneuploidy を持ちうる固形上皮 carcinoma でのみ enabled にする。上皮/EMT 細胞を発現 marker 単独で「悪性」と
+# 呼ばず、inferred CNV / aneuploidy を検証ゲートとして課す。ゲートは非対称（CNV 陰性→非悪性とは限らず「保留」）。
+#   near-diploid 腫瘍種（前立腺癌・甲状腺癌・ccRCC・小児/造血器腫瘍・sarcoma 等）と純細胞株は非適用（例外条項）。
+#   tool は pin しない（「直交 CNV 証拠を要求」へ抽象化）。normal_reference に非悪性クラスタ/免疫・stromal を指定。
+cnv_gate:
+  enabled: false
+  tool: none               # none | infercnv | copykat（要 renv 追加。researcher が選択）
+  normal_reference: ""      # 非悪性 diploid 参照（クラスタ名 or 免疫/stromal 指定。matched normal 無ければ免疫/stromal）
+
+# --- review トリガー（04 の review-priority routing・固定閾値でなく「review へ回す」ヒューリスティック）---
+# 標準: composition confound 指標は確定閾値でなく review へ回すヒューリスティック trigger（確定は grill ゲート委譲）。
+# 値は自分のデータで tune 可能。単一 sample 設計・純細胞株では composition 由来トリガーは 04 が自動で無効化する
+# （standard: composition confound は multi-replicate 比較設計依存の design-specific ゆえ）。
+review_triggers:
+  skew_trigger: 0.90       # 単一 sample がクラスタ細胞の 90% 以上を占めたら review へ（default 例・tune 可）
