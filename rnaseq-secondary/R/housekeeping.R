@@ -19,7 +19,7 @@ load_housekeeping <- function(cfg) {
       human = here::here("resources", "housekeeping", "hk_human.txt"),
       mouse = here::here("resources", "housekeeping", "hk_mouse.txt"),
       stop("load_housekeeping: 未知の organism: ", cfg$organism,
-           "（human / mouse、または edger.hk_gene_file を指定）"))
+           "（human / mouse、または screening.hk_gene_file を指定）"))
   } else {
     path <- here::here(path)
   }

@@ -47,8 +47,10 @@ load_gene_list <- function(path) {
 # 汎用 HK リストの無検証使用を禁じ（MUST NOT）、当該データから経験的 control 集合を導出する（MUST）。
 # 閾値は分位（config 例示・TBD）。返り値: list(controls, metrics)。
 derive_empirical_controls <- function(y, cfg) {
+  # 下の %||% fallback は config.yaml の「(例)」既定を鏡写しにした非規範のセーフガード（規範値でない・
+  # 確定は config 事実層 / grill ゲート）。config キーが在れば常にそちらが権威。
   ec <- cfg$screening$empirical_control %||% list()
-  q_logfc <- ec$max_abs_logfc_quantile %||% 0.5
+  q_logfc <- ec$max_abs_logfc_quantile %||% 0.5   # 非規範 fallback（config 例示の鏡写し）
   q_expr  <- ec$min_expr_quantile      %||% 0.5
   q_cv    <- ec$max_cv_quantile        %||% 0.5
 
@@ -138,17 +140,23 @@ global_shift_gate <- function(y, hk_present, cfg) {
 #   forbidden, message)。forbidden が非空なら HK 経路を適用してはならない（呼出側が停止）。
 master_regulator_status <- function(cfg) {
   mr <- load_gene_list(cfg$screening$master_regulator_file)
-  targets <- names(cfg$screening$hairpin_map %||% list())
+  targets <- names(cfg$screening$hairpin_map %||% list())   # KD 標的は hairpin_map のキーから申告
   if (length(mr) == 0) {
-    return(list(list_present = FALSE, targets = targets, forbidden = character(0),
+    return(list(list_present = FALSE, undeclared = (length(targets) == 0), targets = targets,
+                forbidden = character(0),
                 message = "G2: master regulator 短リスト未整備（config$screening$master_regulator_file 空）。既知グローバル制御因子の KD では HK-dispersion 経路が破綻しうる（例 MYC）。リスト整備までは warning に留め機械強制しない。"))
+  }
+  if (length(targets) == 0) {
+    # リスト在るが KD 標的が hairpin_map で未申告 → G2 を評価できない（silent 通過させない）
+    return(list(list_present = TRUE, undeclared = TRUE, targets = targets, forbidden = character(0),
+                message = "G2: master regulator 短リストは在りますが KD 標的が未申告（hairpin_map 空）で G2 を評価できません。各 KD 標的を hairpin_map（target→hairpins）に宣言してください。"))
   }
   forbidden <- intersect(targets, mr)
   msg <- if (length(forbidden) > 0)
     sprintf("G2: KD 標的 %s は master regulator 短リストに載る → HK-dispersion 経路 適用禁止。スパイクイン（ERCC 等）正規化 and/or 直交検証を要求する。", paste(forbidden, collapse = ", "))
   else
-    "G2: 宣言された KD 標的は master regulator 短リストに無い（リスト外は warning・網羅は不可能）。"
-  list(list_present = TRUE, targets = targets, forbidden = forbidden, message = msg)
+    sprintf("G2: 宣言された KD 標的（%s）は master regulator 短リストに無い（リスト外は warning・網羅は不可能）。", paste(targets, collapse = ", "))
+  list(list_present = TRUE, undeclared = FALSE, targets = targets, forbidden = forbidden, message = msg)
 }
 
 # --- G4: shRNA seed off-target スクリーン（既定 ON 推奨・要ツール）------------------
@@ -166,46 +174,63 @@ seed_offtarget_gate <- function(cfg) {
 # hairpin_map（target→hairpins）が在れば、target ごとに複数 hairpin の対比で「符号一致かつ両者候補閾値超」
 # を第一信頼に使う。単一ハーピンのみのヒットは低信頼ダウンランク。tidy 済 per-contrast 表（logFC・padj を持つ）
 # のリストを受ける。返り値: data.frame(gene, target, confidence, n_hairpins, concordant)。
+# 候補閾値は screening-grade ゆえ較正済み FDR でなく |logFC| ランキング（上位 candidate_rank_top）を使う
+# （標準 SHALL: n=1 のヒットは FC/収縮 LFC ランキングに限定）。fdr 引数は後方互換で受けるが選抜には使わない。
 cross_hairpin_concordance <- function(tidy_list, cfg, fdr = 0.05) {
   hmap <- cfg$screening$hairpin_map %||% list()
   if (length(hmap) == 0) return(NULL)
-  # 各 hairpin(group) → その群を numerator とする対比名を引くため、config$contrasts を逆引き。
+  cand_top <- cfg$screening$candidate_rank_top %||% 100L
+  ref <- cfg$design$reference_level
+
+  # numerator(group) → その群を numerator とする対比名（複数可・後勝ち上書きを避けリスト集約）。
   num_to_contrast <- list()
   for (nm in names(cfg$contrasts)) {
-    num_to_contrast[[cfg$contrasts[[nm]][[1]]]] <- nm
+    num <- cfg$contrasts[[nm]][[1]]
+    num_to_contrast[[num]] <- c(num_to_contrast[[num]], nm)
   }
+  # hairpin(group) の代表対比を選ぶ: KD-vs-対照（den==reference）を優先し、無ければ最初。
+  pick_contrast <- function(h) {
+    cs <- num_to_contrast[[h]]
+    if (is.null(cs)) return(NULL)
+    ref_c <- cs[vapply(cs, function(c) identical(cfg$contrasts[[c]][[2]], ref), logical(1))]
+    if (length(ref_c) > 0) ref_c[1] else cs[1]
+  }
+  # 対比の候補集合（|logFC| 上位 cand_top）
+  candidates_of <- function(cn) {
+    d <- tidy_list[[cn]]; d <- d[is.finite(d$logFC), ]; d <- d[order(-abs(d$logFC)), ]
+    utils::head(d$gene, min(cand_top, nrow(d)))
+  }
+
   out <- list()
   for (tgt in names(hmap)) {
-    hairpins <- hmap[[tgt]]
-    cnames <- unlist(lapply(hairpins, function(h) num_to_contrast[[h]]))
+    cnames <- unique(unlist(lapply(hmap[[tgt]], pick_contrast)))
     cnames <- intersect(cnames, names(tidy_list))
     if (length(cnames) == 0) next
     if (length(cnames) < 2) {
-      # 単一ハーピン → 低信頼ダウンランク（直交検証 G6 を要求）
-      d <- tidy_list[[cnames[1]]]
-      hit <- d$gene[!is.na(d$padj) & d$padj < fdr]
-      if (length(hit) > 0)
-        out[[tgt]] <- data.frame(gene = hit, target = tgt, confidence = "low_single_hairpin",
+      # 単一ハーピン → 低信頼ダウンランク（直交検証 G6 を要求）。候補は |logFC| 上位。
+      cand <- candidates_of(cnames[1])
+      if (length(cand) > 0)
+        out[[tgt]] <- data.frame(gene = cand, target = tgt, confidence = "low_single_hairpin",
                                  n_hairpins = 1L, concordant = NA, stringsAsFactors = FALSE)
       next
     }
-    # 複数 hairpin: 符号一致 & 両者候補閾値超を concordant（高信頼）に
+    # 複数 hairpin: 符号一致 かつ 全対比で |logFC| 候補入り を高信頼 concordant に。
     mats <- lapply(cnames, function(cn) {
-      d <- tidy_list[[cn]]
-      data.frame(gene = d$gene, logFC = d$logFC, padj = d$padj, stringsAsFactors = FALSE)
+      d <- tidy_list[[cn]]; cand <- candidates_of(cn)
+      data.frame(gene = d$gene, logFC = d$logFC, is_cand = d$gene %in% cand,
+                 stringsAsFactors = FALSE)
     })
     m <- Reduce(function(a, b) merge(a, b, by = "gene"), mats)
-    fc_cols  <- grep("^logFC", names(m), value = TRUE)
-    pj_cols  <- grep("^padj",  names(m), value = TRUE)
+    fc_cols <- grep("^logFC",  names(m), value = TRUE)
+    cd_cols <- grep("^is_cand", names(m), value = TRUE)
     sign_ok  <- apply(sign(m[, fc_cols, drop = FALSE]), 1,
-                      function(s) length(unique(s[!is.na(s)])) == 1 && all(!is.na(s)))
-    both_sig <- apply(m[, pj_cols, drop = FALSE], 1,
-                      function(p) all(!is.na(p) & p < fdr))
-    concordant <- sign_ok & both_sig
+                      function(s) all(!is.na(s)) && length(unique(s)) == 1)
+    all_cand <- apply(m[, cd_cols, drop = FALSE], 1, all)   # 両者で候補閾値超（|logFC| 上位）
+    any_cand <- apply(m[, cd_cols, drop = FALSE], 1, any)
+    concordant <- sign_ok & all_cand
     conf <- ifelse(concordant, "high_cross_hairpin",
-                   ifelse(rowSums(m[, pj_cols, drop = FALSE] < fdr, na.rm = TRUE) > 0,
-                          "low_discordant", "not_hit"))
-    keep <- conf != "not_hit"
+                   ifelse(any_cand, "low_discordant", "not_candidate"))
+    keep <- conf != "not_candidate"
     if (any(keep))
       out[[tgt]] <- data.frame(gene = m$gene[keep], target = tgt, confidence = conf[keep],
                                n_hairpins = length(cnames), concordant = concordant[keep],

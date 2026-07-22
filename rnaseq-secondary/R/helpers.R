@@ -19,6 +19,9 @@ suppressPackageStartupMessages({
 # NULL 合体（config の任意キーに既定値を与える）
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
 
+# desc をファイル名の一部に使う前にパス危険文字（/ \）を無害化する（キャプション本文には原文を使う）
+.fs_safe <- function(s) gsub("[/\\\\]", "-", s)
+
 # --- 図の保存: figNN_<desc>.png と .pdf を outputs/figures に両形式で出す ---------
 # plot は ggplot オブジェクト、または「現在のデバイスへ描画する関数」（base/grid 図・
 # pheatmap 等）のいずれか。関数を渡せば png/pdf デバイスを開いて captured 描画する。
@@ -27,7 +30,7 @@ save_fig <- function(plot, fig_id, desc, script,
   stopifnot(grepl("^fig[0-9]+$", fig_id))          # figNN 命名を強制
   fig_dir <- here::here("outputs", "figures")
   dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
-  base <- file.path(fig_dir, sprintf("%s_%s", fig_id, desc))
+  base <- file.path(fig_dir, sprintf("%s_%s", fig_id, .fs_safe(desc)))
   for (ext in c("png", "pdf")) {                   # ★ 両形式を必ず出す
     path <- paste0(base, ".", ext)
     if (inherits(plot, "ggplot")) {
@@ -53,7 +56,7 @@ save_fig <- function(plot, fig_id, desc, script,
 save_table <- function(x, tbl_id, desc, script) {
   tbl_dir <- here::here("outputs", "tables")
   dir.create(tbl_dir, showWarnings = FALSE, recursive = TRUE)
-  path <- file.path(tbl_dir, sprintf("%s_%s.tsv", tbl_id, desc))
+  path <- file.path(tbl_dir, sprintf("%s_%s.tsv", tbl_id, .fs_safe(desc)))
   utils::write.table(x, path, sep = "\t", quote = FALSE, row.names = FALSE)
   append_caption(tbl_id, desc, script)
   invisible(path)

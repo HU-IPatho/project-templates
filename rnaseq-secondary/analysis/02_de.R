@@ -67,6 +67,23 @@ if (!is.null(de_list$edgeR) && length(de_list$edgeR$screening_contrasts) > 0) {
   scr_diag <- de_list$edgeR$diagnostics$screening
   edg <- de_list$edgeR
 
+  # 複製取得不能理由の記録を促す（MUST『理由を record』の実効化・空なら warning。逸脱理由 sibling
+  # edger.test_deviation_reason に倣うが、n=1 は既定経路ゆえ stop でなく warning で走行不変量を保つ）。
+  if (!nzchar(cfg$provenance$replication_unavailable_reason %||% "")) {
+    warning("n=1 screening lane を使用していますが provenance.replication_unavailable_reason が空です。",
+            "複製が構造的に取れない理由を config に記録してください（標準 MUST・documented degraded path の justification）。")
+  }
+
+  # 記述解析（FC ランキング・有意性主張なし）を第一級出力として必ず併走保存（標準 MUST・edgeR §2.13 option 1）
+  if (!is.null(scr_diag$descriptive)) {
+    for (nm in names(scr_diag$descriptive)) {
+      save_table(scr_diag$descriptive[[nm]],
+                 tbl_id = sprintf("descriptive_%s", nm),
+                 desc   = sprintf("descriptive FC ranking (no significance) %s", nm),
+                 script = "analysis/02_de.R")
+    }
+  }
+
   # provenance 記録（screening-grade・disp_source・G1/G2 status・複製取得不能理由）
   prov <- data.frame(
     key = c("screening_grade", "disp_source", "global_shift_flag", "global_shift_action",
@@ -98,7 +115,7 @@ if (!is.null(de_list$edgeR) && length(de_list$edgeR$screening_contrasts) > 0) {
   # G3: HK 検証メトリクス（経験的 control 集合）
   if (!is.null(scr_diag$hk_validation$metrics)) {
     save_table(scr_diag$hk_validation$metrics, "hk_validation",
-               "empirical control / HK validation metrics (G3)", "analysis/02_de.R")
+               "empirical control and HK validation metrics G3", "analysis/02_de.R")
   }
   # G5: cross-hairpin concordance（第一信頼フィルタ・hairpin_map があるとき）
   chc <- cross_hairpin_concordance(tidy_all$edgeR, cfg, fdr = fdr)
@@ -114,7 +131,7 @@ if (!is.null(de_list$edgeR) && length(de_list$edgeR$screening_contrasts) > 0) {
 if (method == "both" && !is.null(tidy_all$DESeq2) && !is.null(tidy_all$edgeR)) {
   agree <- compare_methods(tidy_all$DESeq2, tidy_all$edgeR, fdr = fdr)
   if (!is.null(agree) && nrow(agree) > 0) {
-    save_table(agree, "concordance", "cross-engine concordance (sanity check, Spearman/strata)", "analysis/02_de.R")
+    save_table(agree, "concordance", "cross-engine concordance sanity check Spearman strata", "analysis/02_de.R")
     cat("CONCORDANCE (sanity check・頑健性保証でない):\n"); print(agree)
   } else {
     cat("CONCORDANCE: 複製あり両走の共通対比なし（n=1 screening は DESeq2 非適用ゆえ除外）。\n")

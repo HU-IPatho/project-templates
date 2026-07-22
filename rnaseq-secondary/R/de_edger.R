@@ -98,10 +98,12 @@ run_edger <- function(se, cfg, routing, hk_genes = NULL, run_replicate = TRUE) {
 .edger_screening_lane <- function(y, design_scr, cfg, contrasts_names, hk_genes) {
   fdr <- cfg$fdr %||% 0.05
 
-  # G2: 既知 master regulator 短リスト（適用禁止 + リスト外 warning）
+  # G2: 既知 master regulator 短リスト（適用禁止 or warning・silent 通過させない）
+  # forbidden 有→stop（HK 経路 適用禁止）。それ以外（リスト未整備 / 標的未申告 / リスト外）は
+  # いずれも SHALL の warning（G2 を silent no-op にしない）。
   mr <- master_regulator_status(cfg)
-  if (length(mr$forbidden) > 0) stop(mr$message)      # HK-dispersion 経路 適用禁止
-  if (!mr$list_present) warning(mr$message)
+  if (length(mr$forbidden) > 0) stop(mr$message)
+  warning(mr$message)
 
   # G4: seed off-target スクリーン（enabled + 未実装は fail-closed stop）
   message(seed_offtarget_gate(cfg))

@@ -64,7 +64,11 @@ domain/dataset 固有の **numeric**（HK membership・BCV バンド値・各種
   **非参照間対比（sh1_vs_sh2 等）は `ashr`（contrast 対応）**、参照との単一係数対比のみ `apeglm` 可。
   収縮できず生 LFC に落ちたら出力に `shrink=none` と**明示ラベル**（silent 化しない）。
 - **バッチは複製あり lane 限定で加法補正**（`~batch+group`・残差自由度＝複製を要する）。n=1 lane では
-  batch を足さず素の `~0+group`。
+  batch を足さず素の `~0+group`。**バッチが group と交絡すると（各バッチに一部の群しか無い等）加法補正でも
+  補正不能**（`model.matrix` が rank-deficient）。交絡はデザイン段で各バッチに全群を配置してバランス化する
+  のが上流要件（補正でなく設計で防ぐ）。
+- **複製数の指針**（SHALL・Love 2014 / Schurch 2016）: 最低 **3**（実務下限）・望ましく **6 以上**・
+  DE 全体網羅なら **12 以上**。少数複製でも較正・再現性は劣化する（n=2 を妥当と過信しない）。
 
 ### ★n=1 KD スクリーニングスタンダード（screening-grade）
 
