@@ -43,6 +43,18 @@ edger_design <- function(coldata, cfg) {
   mm
 }
 
+# --- edgeR 用 design（素の means-model ~ 0 + group・共変量を足さない）--------------
+# n=1 スクリーニング lane 用。加法バッチ補正は残差自由度＝複製を要するため複製あり lane に限定する
+# （標準 R6）。screening lane では batch 項を足さず素の ~0+group に留める。
+edger_design_group_only <- function(coldata, cfg) {
+  gcol <- cfg$design$group_col
+  if (!gcol %in% colnames(coldata)) stop("edger_design_group_only: colData に列が無い: ", gcol)
+  coldata[[gcol]] <- factor(coldata[[gcol]])
+  mm <- stats::model.matrix(stats::as.formula(paste0("~ 0 + ", gcol)), data = coldata)
+  attr(mm, "group_col") <- gcol
+  mm
+}
+
 # --- edgeR 用 contrast ベクトル: groupNUM - groupDEN（共変量列は 0）---------------
 edger_contrasts <- function(design, cfg) {
   gcol <- cfg$design$group_col

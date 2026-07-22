@@ -1,7 +1,9 @@
 # {{PROJECT_NAME}}
 
 bulk RNA-seq **2 次解析**（counts → DEG）プロジェクト。正準 object=SummarizedExperiment、
-DEG は DESeq2 / edgeR 両対応。**n=1（各群 1 サンプル）**は edgeR の housekeeping 分散で解く。
+DEG は研究室標準 **bulk-secondary-deg-standard**（v0）に conform。対比を複製構造で routing し、
+複製あり lane は `glmQLFTest`/DESeq2（較正済み FDR）、**n=1 KD lane は screening-grade**
+（HK 分散・必須ゲート G1–G6・記述解析併走）で解く。
 
 - Author: {{AUTHOR}}
 - Created: {{DATE}}
@@ -23,18 +25,22 @@ work-save data/processed outputs reports   # HDD へ退避
 
 ```
 .
-├── config.yaml            ★編集する事実層（design/contrast/method/samples/HK）
+├── config.yaml            ★編集する事実層（scope/design/contrast/method/screening/bcv/samples）
 ├── analysis/              番号付き実行スクリプト（パイプライン本体）
 │   ├── 01_build_se.R      counts+metadata → SummarizedExperiment（data/processed/se.rds）
-│   ├── 02_de.R            SE → DEG（DESeq2/edgeR/両走一致度）
-│   └── 03_figures.R       PCA/MA/volcano/top-DEG heatmap（save_fig で PNG+PDF）
+│   ├── 02_de.R            SE → DEG（scope→routing→lane 別 DEG→concordance）
+│   └── 03_figures.R       PCA/MDS/MA/volcano/top-DEG heatmap（save_fig で PNG+PDF）
 ├── R/                     関数定義（analysis から source）
 │   ├── helpers.R          出力ハーネス save_fig/save_table/captions
 │   ├── build_se.R         SE 構築 / design.R  design・contrast 解決
-│   ├── de_deseq2.R de_edger.R  各エンジン / de_common.R  統一整形・一致度
-│   └── housekeeping.R     HK リスト読込
+│   ├── scope.R            scope/provenance ゲート（fail-closed）
+│   ├── routing.R          複製構造 routing（対比単位 min(group)）
+│   ├── screening.R        n=1 screening 経路・ゲート G1–G5・BCV sweep・記述解析
+│   ├── de_deseq2.R de_edger.R  各エンジン（lane 別）/ de_common.R  統一整形・concordance
+│   └── housekeeping.R     HK 候補リスト読込（要データ内検証・G3）
 ├── python/fetch_counts.py 取得変換（counts を gene×sample TSV に正規化）
-├── resources/housekeeping/  同梱 HK リスト（hk_human.txt / hk_mouse.txt）
+├── resources/housekeeping/     同梱 HK 候補（hk_human.txt / hk_mouse.txt・要検証）
+├── resources/master_regulators/ G2 用 master regulator 短リスト（既定空）
 ├── data/{raw,interim,processed}/  3 層データ（git 非追跡）
 ├── outputs/{tables,figures}/      成果物（git 追跡）
 ├── reports/report.qmd     Quarto レポート（計算しない・読むだけ）

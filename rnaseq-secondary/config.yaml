@@ -5,6 +5,11 @@
 #   /grill-me で対話的に埋める（.claude/skills/scaffold-rnaseq-secondary/）。
 #   非自明な固有「規約（narrative）」は AGENTS.md「このプロジェクト固有」節へ（事実と分離）。
 # analysis/01-03 のスクリプトは本ファイルを読んで動く（スクリプト本体は編集しない）。
+#
+# 差次発現（DEG）段の方法論は研究室標準 bulk-secondary-deg-standard（v0・方法論）に conform する
+#   （specs/bulk-secondary-deg-standard/spec.md・ADR-0034）。
+# 標準の domain/dataset 固有の numeric（HK membership・BCV バンド値・各種閾値・G2 リスト・対比の中身）は
+#   TBD＝「default 例」であり、自分のデータで診断を見てから確定する（確定は /grill-me = grill ゲート）。
 # ============================================================================
 
 # --- 入力 ---------------------------------------------------------------------
@@ -12,38 +17,109 @@
 # fetch_data.sh / python/fetch_counts.py で data/ に用意し、ここにルート相対パスを書く。
 counts_file: data/interim/counts.tsv
 
-# 遺伝子シンボルの生物種（housekeeping リストの既定選択に使う）。human / mouse。
-organism: human
+# --- 適用範囲 scope とデータ provenance（標準: scope 限定 / BCV provenance 整合）------
+# 本標準 v0 は human/mouse ＋ full-length polyA bulk-RNA-seq に scope する。範囲外は fail-closed
+#   （R/scope.R が停止し silent に処理しない）。HK バンドと分散特性が未較正のため。
+organism: human              # human | mouse（HK リストが在る種のみ・他種は fail-closed）
+library_prep: polya_fulllength
+                             # 標準 v0 の適用範囲 = full-length polyA bulk。
+                             # total | three_prime_tag | umi | ffpe 等は count 分布/技術分散が異なり
+                             # 「要 recalibration」で fail-closed（silent 適用しない）。
+provenance:                  # BCV バンドの整合チェックと n=1 経路の来歴に使う（標準 R: BCV/scope）。
+  source: cell_line          # cell_line | patient | technical（bcv.band のキーと整合しないと fail-closed）
+  replication_unavailable_reason: ""
+                             # n=1 スクリーニング経路を使うなら「なぜ複製が構造的に取れないか」を必ず記録する
+                             # （標準: last-resort framing・documented degraded path）。
 
-# --- DEG エンジン選択 ---------------------------------------------------------
-# "edger"  : edgeR（DGEList）。★n=1（各群 1 サンプル）はこちら（HK 分散）★。
-# "deseq2" : DESeq2（DESeqDataSet・median-of-ratios）。複製ありの標準。
-# "both"   : 両方走らせ、有意遺伝子の一致度（Jaccard / logFC 相関 / 符号一致）も出力。
+# --- DEG エンジン選択（複製あり lane で使うエンジン）--------------------------
+# "edger"  : edgeR（DGEList・複製あり既定 = glmQLFit+glmQLFTest）。
+# "deseq2" : DESeq2（DESeqDataSet・median-of-ratios）。
+# "both"   : 両方走らせ cross-engine concordance（補助 sanity check・標準）も出力。
+# ※ n=1（対比単位 min(group)<2）に routing された対比は engine 選択に依らず必ず edgeR
+#    スクリーニング経路（HK 分散・screening-grade）を通る。DESeq2 は複製なしで走らないため。
 method: edger
 
-fdr: 0.05                      # 有意判定の FDR 閾値（図の色分け・一致度に使用）
+fdr: 0.05                      # （例・自データで確定）有意判定の FDR 閾値（複製あり lane の色分け・concordance）
 
 # --- design / contrast（design.R が各エンジンの入力に変換）--------------------
 design:
   group_col: group             # 主たる比較変数（samples の列名）
-  covariates: []               # モデル共変量（バッチ等）。下の既定例は単一バッチゆえ空。
-                               # 複数バッチがあるなら [batch] を指定（design.R がモデルに入れ補正）。
-  reference_level: NC          # group の基準レベル（対照）
+  covariates: []               # モデル共変量（バッチ等）。加法バッチ補正は残差自由度＝複製を要するため
+                               # 複製あり lane に限定される（n=1 lane では自動 drop・標準）。
+                               # 複数バッチがあるなら [batch] を指定（複製あり対比でのみ補正に入る）。
+  reference_level: NC          # group の基準レベル（対照・DESeq2 で relevel）
 
 contrasts:                     # 名前: [numerator, denominator]（group のレベル名）
   sh1_vs_NC: [sh1, NC]
   sh2_vs_NC: [sh2, NC]
 
+# --- 複製構造 routing（標準: 対比単位 min(group)・複製独立性メタ）-------------
+# 経路分岐は対比単位の最小群サイズ min(table(group)) で決める（二値 all(n==1) では分岐しない）。
+# min(group)<2 の対比は n=1 スクリーニング経路へ降格される（部分複製デザインの silent 漏れ防止）。
+# 複製の独立性を必ず申告する: biological（真の複製）/ technical（同一検体の再測定）/ pseudo。
+#   technical のみで構成される群は複製ありと見なさず biological n=1 扱いにする
+#   （technical 分散は生物変動を計上せず Type I error を膨張させる）。
+replicate_independence:
+  default: biological          # biological | technical | pseudo（全群の既定）
+  per_group: {}                # 群ごとの上書き。例: {NC: biological, sh1: technical}
+
 # --- 前処理 -------------------------------------------------------------------
 prefilter:
-  min_count_sum: 10            # DESeq2 パスの軽い prefilter（edgeR は filterByExpr）
+  # DESeq2 の低発現 prefilter は「必須でない」（速度/メモリ目的）。FDR 統制は results() の
+  # independent filtering が担う（別概念・標準で用語区別）。edgeR は filterByExpr。
+  min_count_sum: 10
 
-# --- edgeR n=1 DEG（housekeeping 分散）---------------------------------------
+# --- 複製あり経路（較正済み FDR lane・標準）----------------------------------
 edger:
-  hk_gene_file: ""             # 空なら organism に応じ resources/housekeeping/ の同梱を使う
-                               # 例: 全 Eisenberg リストに差替 → resources/housekeeping/hk_human_full.txt
-  min_hk_genes: 10             # 発現行列に存在する HK がこれ未満なら BCV 固定へフォールバック
-  bcv_fallback: 0.4            # フォールバック BCV（human 0.4 / 細胞株 0.1 / technical 0.01）
+  test: QL                     # QL（glmQLFit+glmQLFTest・複製あり既定・very reliable FDR control）
+                               # | LRT（traditional・複製ありでは非推奨＝意図的逸脱のみ）
+  test_deviation_reason: ""    # test: LRT にするなら「なぜ QL でなく LRT か」の理由を必ず記録する（SHALL）
+deseq2:
+  shrink: ashr                 # none | apeglm（単一係数=参照との対比のみ）| ashr（contrast 対応・
+                               #   非参照間対比 sh1_vs_sh2 等も可）。標準の既定は contrast 対応の ashr。
+                               # apeglm 適用不可で生 LFC に落ちるときは出力に「収縮なし」と明示ラベルされる。
+
+# --- n=1 KD スクリーニングスタンダード（screening-grade・標準）---------------
+# この経路の出力は screening-grade（候補絞り・仮説生成）。較正済み FDR を確定的主張として出さず、
+# ヒットは fold-change / 収縮 LFC のランキングに限る。記述解析（FC ランキング + MDS・有意性主張なし）を
+# 必ず併走出力する（edgeR §2.13 option 1）。
+screening:
+  # G3: 汎用 HK リストの無検証使用は禁止（標準）。同梱リストは「候補」であり、当該データで
+  #     非応答性を経験的に検証（低 logFC・高発現・低 CV）してから使う。CNV アーム上の遺伝子は除外する。
+  hk_gene_file: ""             # 空なら organism の同梱候補リスト（resources/housekeeping/）。要データ内検証。
+  min_hk_genes: 10             # （例）発現行列内で検証を通った HK 候補がこれ未満なら BCV バンドへフォールバック
+  empirical_control:           # G3: データ内経験的 control 集合の導出基準（分位・例示・TBD）
+    max_abs_logfc_quantile: 0.5   # （例）|群間 logFC| が下位これ以内
+    min_expr_quantile: 0.5        # （例）平均発現が上位これ以内（= 分位 >= 0.5）
+    max_cv_quantile: 0.5          # （例）CV が下位これ以内
+  global_shift:                # G1 大域シフトゲート（hard）の判定閾値（例・TBD）
+    hk_median_abs_logfc_max: 0.5  # （例）|HK 群間中央 logFC| がこれ超なら「大域シフト疑い」→ 破棄/記述降格
+    hk_var_ratio_max: 1.0         # （例）HK 分散 / 全遺伝子分散中央 がこれ超なら flag
+  master_regulator_file: ""    # G2: 既知グローバル制御因子（master regulator）の curated 短リスト
+                               #   （resources/master_regulators/ に置く）。標的がこれに載れば HK 経路 適用禁止
+                               #   （spike-in/直交検証要求）。リスト外は warning（網羅不能ゆえ短リスト+warning）。
+                               #   既定は空 = 常に「リスト未整備」warning（G2 リスト整備後に機械強制化）。
+  cnv_excluded_arms_file: ""   # G3: 既知 CNV アーム上の遺伝子（HK 候補から除外）。データ固有・空可。
+  seed_offtarget:              # G4: shRNA seed 介在 off-target スクリーン（既定 ON 推奨・要ツール）
+    enabled: false             #   要 SeedMatchR 等（renv 追加）。enabled + 未実装フックは fail-closed stop。
+  hairpin_map: {}              # G5: cross-hairpin concordance（第一信頼フィルタ）。target→hairpin 群の対応を
+                               #   宣言すると「sh 間で符号一致かつ両者候補閾値超」を第一信頼に使う。
+                               #   例: {TP53: [sh1, sh2]}（group 名）。1 標的あたり独立 shRNA 2 本以上を強く推奨。
+                               #   空なら concordance フィルタ無効（単一ハーピンは低信頼ダウンランク扱い）。
+  orthogonal_validation:       # G6: 直交検証（qPCR/独立ハーピン/orthogonal・既定 ON 推奨）
+    required: true             #   形の記録（実施は下流工程）。false にするなら理由を記録する。
+  candidate_rank_top: 100      # （例）screening 候補として提示する上位遺伝子数（FC/収縮 LFC ランキング）
+
+# --- BCV 運用（バンド + 感度スイープ + provenance 整合・標準）-----------------
+# 固定単一 BCV を確定値運用してはならない（本パイプ最感度パラメータ）。バンドで感度スイープし
+# ヒットの順位安定性を出力する。HK 由来 common.dispersion 推定が成功したら固定 BCV バンドより優先する。
+# 数値は「例示」であり規範的固定値でない（edgeR §2.13 / QL workflow の典型値）。provenance.source と
+# 整合しない（該当バンドが無い）と fail-closed。
+bcv:
+  band:
+    cell_line: [0.05, 0.1, 0.2]   # （例）genetically identical な樹立細胞株（edgeR QL workflow 0.05–0.2）
+    patient:   [0.3, 0.4, 0.5]    # （例）ヒト患者由来（edgeR §2.13 human ~0.4）
+    technical: [0.01, 0.02]       # （例）technical replicate（edgeR §2.13 ~0.01）
 
 # --- 図 -----------------------------------------------------------------------
 heatmap:
@@ -51,7 +127,9 @@ heatmap:
 
 # --- サンプルシート（行=sample。counts のヘッダ sample_id と一致させる）--------
 # ↓ は n=1 shRNA ノックダウン例（NC/sh1/sh2 各 1・batch は同一 → 実質共変量なし）。
-#   複製がある場合は行を増やし group を割り当てる（そのとき method: deseq2 も選べる）。
+#   全対比が min(group)<2 ゆえ screening 経路（HK 分散・screening-grade）に routing される。
+#   複製がある場合は行を増やし group を割り当てる（min(group)>=2 の対比は複製あり lane =
+#   glmQLFTest / DESeq2 に routing され較正済み FDR を主張できる）。
 samples:
   - {sample_id: NC,  group: NC,  batch: B1}
   - {sample_id: sh1, group: sh1, batch: B1}

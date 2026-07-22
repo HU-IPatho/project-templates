@@ -3,7 +3,7 @@
 # ヒト HK パネル（Eisenberg & Levanon 2013 + 古典的リファレンス遺伝子）の
 # マウス ortholog / 慣用シンボル（MGI 準拠の Title-case）の **curated 部分集合**。
 # 自分の count 行列のアノテーションに一致させること（不一致行は自動で無視される）。
-# 差し替えは config.yaml の edger.hk_gene_file で行う。
+# 差し替えは config.yaml の screening.hk_gene_file で行う。
 # 形式: 1 行 1 遺伝子シンボル。'#' 始まりの行と空行は無視。
 #
 Actb

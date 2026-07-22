@@ -24,37 +24,97 @@
 `config.yaml` と本ファイル「このプロジェクト固有」節を埋める。主なキー:
 
 - **`counts_file`**: gene×sample の raw counts TSV（1 列目=gene_id・ヘッダ=sample_id）。
-- **`method`**: `edger`（n=1 はこれ）/ `deseq2`（複製ありの標準）/ `both`（一致度も出力）。
-- **`design`**: `group_col`（主比較変数）・`covariates`（バッチ等の共変量・単一レベルは自動除外）・
-  `reference_level`（対照）。**バッチはモデル共変量で補正**する（scRNA の Harmony=埋め込み補正とは別レイヤ）。
+- **`organism` / `library_prep`**: scope（human/mouse ＋ full-length polyA bulk）。範囲外は fail-closed。
+- **`provenance`**: `source`（cell_line/patient/technical・BCV バンド整合）・`replication_unavailable_reason`
+  （n=1 経路を使うなら必須）。
+- **`method`**: 複製あり lane の engine。`edger`（glmQLFTest）/ `deseq2` / `both`（concordance sanity check）。
+  ※ n=1（min(group)<2）対比は engine に依らず必ず edgeR screening 経路。
+- **`design`**: `group_col`（主比較変数）・`covariates`（バッチ等・**加法補正は複製あり lane 限定**・
+  単一レベルは自動除外）・`reference_level`（対照）。
+- **`replicate_independence`**: 複製の独立性（`biological`/`technical`/`pseudo`）。technical のみは n=1 扱い。
 - **`contrasts`**: `名前: [numerator, denominator]`（group のレベル名で多対比を宣言）。
+- **`edger.test`**: `QL`（既定）/ `LRT`（逸脱時 `test_deviation_reason` 必須）。**`deseq2.shrink`**:
+  `ashr`（既定・contrast 対応）/ `apeglm`（単一係数のみ）/ `none`。
+- **`screening`**: n=1 経路のゲート（G1–G6）・HK 検証・hairpin_map（G5）・master_regulator_file（G2）等（数値は例）。
+- **`bcv.band`**: provenance.source 別 BCV バンド（感度スイープ用・数値は例示）。
 - **`samples`**: サンプルシート（行=sample・`sample_id` は counts のヘッダと一致）。
 
-## ★n=1 DEG（各群 1 サンプル）— 本テンプレの主眼
+## 差次発現（DEG）は研究室標準 bulk-secondary-deg-standard に conform
 
-複製が無いと分散を各遺伝子から推定できない。そこで **housekeeping 遺伝子**（群間で発現不変が
-前提）の群間ばらつきを分散の代理に使い、edgeR の `common.dispersion` を推定する（`R/de_edger.R`）:
+DEG 段の方法論は研究室標準 **bulk-secondary-deg-standard**（v0・方法論）に conform する
+（`HU-IPatho/coder` の `specs/bulk-secondary-deg-standard/spec.md`・ADR-0034）。標準の
+domain/dataset 固有の **numeric**（HK membership・BCV バンド値・各種閾値・G2 リスト・対比の中身）は
+**TBD**＝config.yaml の「default 例」であり、自分のデータで診断を見てから確定する（確定は `/grill-me`
+＝grill ゲート）。**科学的標準そのものを勝手に書き換えない**（変更は grill 批准が要る・ADR-0028）。
 
-1. group を全 1 に潰した DGEList の HK 部分集合で
-   `estimateDisp(HK, trend.method="none", tagwise=FALSE)` → `common.dispersion`
-2. それを全遺伝子の DGEList へ移植（trended/tagwise は付けない）
-3. `glmFit`/`glmLRT` で多対比（NC vs sh1, NC vs sh2 …）
+### 複製構造による routing（対比単位 `min(group)`）
 
-- **HK リストは同梱**（`resources/housekeeping/hk_human.txt` / `hk_mouse.txt`・Eisenberg &
-  Levanon 2013 + 古典 HK の curated 部分集合）。`config$organism` で自動選択、
-  `config$edger.hk_gene_file` で任意リスト（全 Eisenberg 等）へ差替可。
-- HK が発現行列に `min_hk_genes` 未満しか無い / 推定失敗 → **BCV 固定へフォールバック**
-  （`bcv_fallback`・human 0.4 / 細胞株 0.1 / technical 0.01）。
-- **n=1 の結果は探索的**。FDR/有意性の解釈は限定的（`de.rds$edgeR$disp_source` に由来を記録）。
-  スクリプトは実行時に warning でこれを明示する。**複製がある実験を n=1 と偽って回さないこと。**
+経路分岐は **対比ごとの最小群サイズ `min(table(group))`** で決める（`R/routing.R`）。`min<2` の対比は
+**n=1 スクリーニング経路**へ、`min>=2` は**複製あり経路**へ振られる（部分複製デザインの silent 漏れ防止）。
+複製の**独立性**を `config$replicate_independence`（`biological`/`technical`/`pseudo`）で必ず申告する。
+**technical のみの群は biological n=1 扱い**（technical 分散は生物変動を計上せず偽陽性が膨張する）。
 
-## 前処理・正規化（エンジン差）
+### 複製あり経路（較正済み FDR lane）
 
-- **edgeR**: `filterByExpr` → TMM 正規化（`calcNormFactors(method="TMM")`）。
-- **DESeq2**: 低発現 prefilter（`prefilter.min_count_sum`）→ median-of-ratios（`DESeq` 内部）。
-- **両走時**（`method: both`）は `compare_methods` が対比ごとに有意遺伝子の Jaccard・logFC 相関・
-  符号一致率を `outputs/tables/method_agreement_*.tsv` に出す。DESeq2 は複製が要るので、
-  n=1 では `edger` を使う（両走は複製ありのとき）。
+- **edgeR**: `filterByExpr` → TMM → `estimateDisp(design)` → **`glmQLFit`+`glmQLFTest` が既定**
+  （`edger.test: QL`・very reliable FDR control）。`glmLRT`（旧経路）は複製ありでは非推奨で、使うなら
+  `edger.test: LRT` + `test_deviation_reason` に理由必須（意図的逸脱）。
+- **DESeq2**: median-of-ratios・NC を reference relevel。低発現 prefilter は**任意**（速度/メモリ）で、
+  FDR 統制は `results()` の **independent filtering** が担う（別概念）。LFC 収縮は `deseq2.shrink`:
+  **非参照間対比（sh1_vs_sh2 等）は `ashr`（contrast 対応）**、参照との単一係数対比のみ `apeglm` 可。
+  収縮できず生 LFC に落ちたら出力に `shrink=none` と**明示ラベル**（silent 化しない）。
+- **バッチは複製あり lane 限定で加法補正**（`~batch+group`・残差自由度＝複製を要する）。n=1 lane では
+  batch を足さず素の `~0+group`。**バッチが group と交絡すると（各バッチに一部の群しか無い等）加法補正でも
+  補正不能**（`model.matrix` が rank-deficient）。交絡はデザイン段で各バッチに全群を配置してバランス化する
+  のが上流要件（補正でなく設計で防ぐ）。
+- **複製数の指針**（SHALL・Love 2014 / Schurch 2016）: 最低 **3**（実務下限）・望ましく **6 以上**・
+  DE 全体網羅なら **12 以上**。少数複製でも較正・再現性は劣化する（n=2 を妥当と過信しない）。
+
+### ★n=1 KD スクリーニングスタンダード（screening-grade）
+
+複製取得不能時の n=1 KD 経路は **screening standard**（documented degraded path）。出力は
+**screening-grade（候補絞り・仮説生成）**で、**較正済み FDR を確定的主張として出さない**。ヒットは
+fold-change / 収縮 LFC のランキングに限り、**記述解析（FC ランキング + MDS・有意性主張なし）を必ず併走**
+（edgeR §2.13 option 1）。`config$provenance$replication_unavailable_reason` に**複製が取れない理由を必ず記録**。
+
+分散は **検証済 HK 由来 `common.dispersion`（BCV バンドより優先）**、不足時は **BCV バンド代表値**へ
+フォールバック（`R/de_edger.R` / `R/screening.R`）。**anti-conservative 方向性バイアス**（HK の低分散を
+高分散遺伝子へ移植 → 偽陽性が生物学的に興味深い変動遺伝子に集中）に注意（`disp_source` と診断表に surface）。
+
+**この経路の妥当性は biology-conditional**（「当該摂動が大域 RNA 組成シフトを起こさない」かつ「HK 群が
+その摂動下で非DE」の precondition 下でのみ成立）。無条件に「統計機構ゆえ組織/遺伝子非依存」と述べない。
+
+#### n=1 経路の必須ゲート G1–G6（`R/screening.R`・数値は config/TBD）
+
+- **G1 大域シフト（hard）**: HK 群の群間 logFC 分布を診断。中央値/分散が前提破綻を示せば DEG 破棄 or 記述降格。
+- **G2 既知グローバル制御因子（適用禁止＋リスト外 warning）**: 標的が master regulator 短リスト
+  （`resources/master_regulators/`・既定は空）に載れば HK 経路 適用禁止（spike-in/直交検証要求）。
+- **G3 データ内 HK 非応答検証（hard）**: 汎用 HK の**無検証使用禁止**。当該データから経験的 control
+  （低 |群間 logFC|・高発現・低 CV）を導出し、供給 HK を検証。既知 CNV アーム上遺伝子は除外。
+- **G4 shRNA seed off-target スクリーン（既定 ON 推奨）**: `screening.seed_offtarget.enabled`。未実装で
+  enabled なら fail-closed 停止。
+- **G5 cross-hairpin concordance（第一信頼フィルタ）**: `screening.hairpin_map`（target→hairpins）を宣言
+  すると「sh 間で符号一致かつ両者候補閾値超」を第一信頼に。1 標的 2 本以上推奨・単一は低信頼ダウンランク。
+- **G6 直交検証（既定 ON 推奨）**: `screening.orthogonal_validation.required`。確定扱い前に qPCR/独立ハーピン等。
+
+### BCV 運用（バンド＋感度スイープ）
+
+固定単一 BCV を確定値運用しない（最感度パラメータ）。`config$bcv$band`（provenance.source 別・数値は例示）で
+**感度スイープ**し、ヒットの順位安定性を出力（`outputs/tables/bcv_sensitivity_*.tsv`）。`provenance.source` に
+対応バンドが無ければ fail-closed。HK 由来推定が成功すれば固定 BCV より優先。
+
+### cross-engine concordance（補助 sanity check）
+
+`method: both`（複製あり）では `compare_methods` が **Spearman 順位相関**主指標・Jaccard・符号一致・
+非対称 overlap を **effect-size bin と方向で層別**して出す（`outputs/tables/concordance_*.tsv`）。これは
+**頑健性の保証でなく補助 sanity check**（両エンジンは failure mode が相関）。**n=1 には適用しない**
+（DESeq2 は複製なしで null）。n=1 の robustness proxy は cross-hairpin（G5）と BCV スイープの順位安定性。
+
+### 適用範囲（scope・fail-closed）
+
+v0 scope は **human/mouse ＋ full-length polyA bulk**。`config$organism`・`config$library_prep` を検証し
+範囲外は **fail-closed で停止**（`R/scope.R`）。HK リスト不在の種・3'-tag/UMI/FFPE 等は silent に適用しない
+（「要 recalibration」）。
 
 ## 再現性（版ピン 3 系統）
 
