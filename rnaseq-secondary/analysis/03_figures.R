@@ -13,6 +13,7 @@ se  <- readRDS(here::here("data", "processed", "se.rds"))
 de  <- readRDS(here::here("data", "processed", "de.rds"))
 fdr <- cfg$fdr %||% 0.05
 gcol <- cfg$design$group_col
+grp_vec <- as.character(as.data.frame(SummarizedExperiment::colData(se))[[gcol]])
 
 logcpm <- edgeR::cpm(SummarizedExperiment::assay(se, "counts"),
                      log = TRUE, prior.count = 2)
@@ -33,6 +34,17 @@ p_pca <- ggplot(pca_df, aes(PC1, PC2, color = group)) +
        y = sprintf("PC2 (%.1f%%)", pv[2]),
        title = "PCA (top variable genes, log-CPM)")
 save_fig(p_pca, "fig01", "pca", "analysis/03_figures.R", width = 6, height = 5)
+
+# ---- fig02: MDS（記述解析の併走・n=1 screening standard で必須・edgeR plotMDS）----
+# 標準: n=1 KD screening lane では記述解析（FC ランキング + MDS・有意性主張なし）を必ず併走出力する
+# （edgeR §2.13 option 1）。MDS は TMM 正規化後の log-CPM 距離で試料配置を見る（複製ありでも診断に有用）。
+dge <- edgeR::calcNormFactors(
+  edgeR::DGEList(counts = SummarizedExperiment::assay(se, "counts"), group = factor(grp_vec)),
+  method = "TMM")
+save_fig(function() {
+  edgeR::plotMDS(dge, labels = colnames(dge), col = as.integer(factor(grp_vec)),
+                 main = "MDS (TMM log-CPM distances)")
+}, "fig02", "mds", "analysis/03_figures.R", width = 6, height = 5)
 
 # ---- MA / volcano（主エンジンの各対比）---------------------------------------
 primary <- if (!is.null(de$edgeR)) "edgeR" else "DESeq2"
